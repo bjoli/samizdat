@@ -37,7 +37,9 @@
 (export
   At Call Source
   read-source read-source-file
-  ats->string)
+  ats->string
+  ;; A body a line at a time, for a command that reads one as @read-list does.
+  at-lines at-line-blank? at-line-indentation)
 
 (import (std prelude))
 (import (bjorsec core))
@@ -554,6 +556,20 @@
                                     ((blank-line? (vec-ref lines i)) (vec-empty))
                                     ((= i 0) (vec-ref lines i))
                                     (else (outdent (vec-ref lines i) margin))))))))))
+
+;; --- the same, for a command ------------------------------------------------
+
+;; Items one line at a time, the newlines taken out and adjacent text joined.
+(: at-lines (-> (Vec At) (Vec (Vec At))))
+(defun (at-lines items) (split-lines (merge-texts items)))
+
+;; Whether a line is space, or nothing.
+(: at-line-blank? (-> (Vec At) bool))
+(defun (at-line-blank? line) (blank-line? line))
+
+;; How far a line's text is indented; one that begins with a command is not.
+(: at-line-indentation (-> (Vec At) int))
+(defun (at-line-indentation line) (indentation line))
 
 ;; ---------------------------------------------------------------------------
 ;; Showing a tree

@@ -33,6 +33,11 @@
   inline block nothing
   ;; The body.
   has-body? body-items body-text expand-inlines expand-blocks expand-items
+  items->blocks
+  ;; Answering once the document is finished: a table of contents, a reference.
+  defer-blocks defer-inlines
+  ;; Other files, relative to the document being expanded.
+  include-file relative-path read-relative
   ;; The arguments.
   positional keyword arg-count arg-string arg-string-or
   kw-string-or kw-int-or kw-bool-or kw-symbol-or check-keywords!
@@ -62,17 +67,25 @@
 (type (: Piece (Union (PInline Inline)
                       (PBlock Block))))
 
-;; `commands` is the table the document is expanded with, `source` what a
-;; message calls the document, `notes` the footnotes so far (a slot is `None`
-;; while its note is being expanded), and `ids` how many times each heading
-;; id has been handed out.
+;; What a deferred command makes of the finished document.
+(type (: Later (Union (LaterBlocks (-> Document (Vec Block)))
+                      (LaterInlines (-> Document (Vec Inline))))))
+
+;; `commands` is the table the document is expanded with. `source` is what a
+;; message calls the file being expanded — the document, or one it includes —
+;; and `including` the files being included, outermost first. `notes` are the
+;; footnotes so far (a slot is `None` while its note is being expanded), `ids`
+;; how many times each heading id has been handed out, and `later` the
+;; deferred commands, each with the source it was written in.
 (type-rec
   (: Command (Alias (-> Ctx Call (Vec Piece))))
   (: Ctx #:opaque (Record (: commands (Map string Command))
-                          (: source string)
+                          (: source string #:mutable)
+                          (: including (Vec string) #:mutable)
                           (: notes (Vec (Option (Vec Block))) #:mutable)
                           (: ids (Map string int) #:mutable)
-                          (: depth int #:mutable))))
+                          (: depth int #:mutable)
+                          (: later (Vec (Tuple string Later)) #:mutable))))
 
 (: ctx-source (-> Ctx string))
 (defun (ctx-source cx) (record-ref cx source))
@@ -184,7 +197,13 @@
 ;; The body expanded as blocks, its text gathered into paragraphs.
 (: expand-blocks (-> Ctx Call (Vec Block)))
 (defun (expand-blocks cx c)
-  (decode (expand-items cx (body-items c))))
+  (items->blocks cx (body-items c)))
+
+;; Items of any provenance — a part of a body a command has taken apart —
+;; expanded into paragraphs and blocks.
+(: items->blocks (-> Ctx (Vec At) (Vec Block)))
+(defun (items->blocks cx items)
+  (decode (expand-items cx items)))
 
 ;; ---------------------------------------------------------------------------
 ;; Paragraphs
@@ -472,6 +491,159 @@
                "-"))
 
 ;; ---------------------------------------------------------------------------
+;; Later: what needs the finished document
+;; ---------------------------------------------------------------------------
+;; A table of contents lists headings that come after it, and a reference may
+;; point at a section further on. A command that needs the whole document
+;; answers with `defer-blocks` or `defer-inlines`: a placeholder now, and a
+;; function that the finished document is handed to once every command has
+;; run. What it makes goes where the placeholder was.
+;;
+;; The placeholder is a `Div` or a `Span` whose class begins with a NUL, which
+;; nothing written in a document can make, and none is left in what `expand`
+;; answers.
+
+(: later-mark string)
+(def later-mark (str (char->string (integer->char 0)) "later:"))
+
+(: later-class (-> int string))
+(defun (later-class n) (str later-mark (int->string n)))
+
+;; The number in a placeholder's class, when it is one.
+(: later-number (-> string (Option int)))
+(defun (later-number class)
+  (if (string-starts-with? class later-mark)
+      (Some (string->int (.Substring class (string-length later-mark))))
+      None))
+
+(: later! (-> Ctx Later int))
+(defun (later! cx what)
+  (def n (vec-length (record-ref cx later)))
+  (record-set! cx (later (vec-add (record-ref cx later) (Tuple (record-ref cx source) what))))
+  n)
+
+(: defer-blocks (-> Ctx (-> Document (Vec Block)) (Vec Piece)))
+(defun (defer-blocks cx make)
+  (block (Div (later-class (later! cx (LaterBlocks make))) (vec-empty))))
+
+(: defer-inlines (-> Ctx (-> Document (Vec Inline)) (Vec Piece)))
+(defun (defer-inlines cx make)
+  (inline (Span (later-class (later! cx (LaterInlines make))) (vec-empty))))
+
+;; Runs `thunk` as if in the file `source`, so that a refusal names it.
+(: in-source (-> Ctx string (-> %a) %a))
+(defun (in-source cx source thunk)
+  (def before (record-ref cx source))
+  (record-set! cx (source source))
+  (def result (thunk))
+  (record-set! cx (source before))
+  result)
+
+;; The placeholders replaced by what their functions make of `doc`. What a
+;; function makes is resolved in turn — a table of contents lists a heading
+;; that holds a reference — except for a placeholder already being resolved,
+;; which is left out rather than resolved forever.
+(: resolve-blocks (-> Ctx Document (Vec int) (Vec Block) (Vec Block)))
+(defun (resolve-blocks cx doc active bs)
+  (loop (:for b bs)
+        (:acc out (folding (vec-empty) (vec-merge out (resolve-block cx doc active b))))))
+
+(: resolve-block (-> Ctx Document (Vec int) Block (Vec Block)))
+(defun (resolve-block cx doc active b)
+  (match b
+    ((Div class bs)
+     (match (later-number class)
+       ((Some n)
+        (if (vec-contains active n)
+            (vec-empty)
+            (match (vec-ref (record-ref cx later) n)
+              ((Tuple source (LaterBlocks make))
+               (resolve-blocks cx doc (vec-add active n) (in-source cx source (fun () (make doc)))))
+              (_ (vec-empty)))))
+       (None [(Div class (resolve-blocks cx doc active bs))])))
+    ((Para xs) [(Para (resolve-inlines cx doc active xs))])
+    ((Heading level id xs) [(Heading level id (resolve-inlines cx doc active xs))])
+    ((Quote bs) [(Quote (resolve-blocks cx doc active bs))])
+    ((ItemList numbered items)
+     [(ItemList numbered (vec-map (fun (item) (resolve-blocks cx doc active item)) items))])
+    (_ [b])))
+
+(: resolve-inlines (-> Ctx Document (Vec int) (Vec Inline) (Vec Inline)))
+(defun (resolve-inlines cx doc active xs)
+  (loop (:for x xs)
+        (:acc out (folding (vec-empty) (vec-merge out (resolve-inline cx doc active x))))))
+
+(: resolve-inline (-> Ctx Document (Vec int) Inline (Vec Inline)))
+(defun (resolve-inline cx doc active x)
+  (match x
+    ((Span class xs)
+     (match (later-number class)
+       ((Some n)
+        (if (vec-contains active n)
+            (vec-empty)
+            (match (vec-ref (record-ref cx later) n)
+              ((Tuple source (LaterInlines make))
+               (resolve-inlines cx doc (vec-add active n) (in-source cx source (fun () (make doc)))))
+              (_ (vec-empty)))))
+       (None [(Span class (resolve-inlines cx doc active xs))])))
+    ((Emph xs) [(Emph (resolve-inlines cx doc active xs))])
+    ((Strong xs) [(Strong (resolve-inlines cx doc active xs))])
+    ((Link url xs) [(Link url (resolve-inlines cx doc active xs))])
+    (_ [x])))
+
+;; ---------------------------------------------------------------------------
+;; Other files
+;; ---------------------------------------------------------------------------
+
+(import/extern
+  (directory-of (: System.IO.Path.GetDirectoryName (-> string string))))
+
+;; `path` as a document writes it: relative to the directory the file being
+;; expanded is in. A document read from a string, rather than from a file, is
+;; in the current directory.
+(: relative-path (-> Ctx string string))
+(defun (relative-path cx path)
+  (def source (record-ref cx source))
+  (def dir (if (string-empty? source) "" (directory-of source)))
+  (if (string-empty? dir) path (path-combine dir path)))
+
+;; The text of the file at `path`, relative to the document. A file that is not
+;; there is refused, as the command's mistake.
+(: read-relative (-> Ctx Call string string))
+(defun (read-relative cx c path)
+  (def full (relative-path cx path))
+  (unless (file-exists? full) (refuse cx c (str "there is no file " full)))
+  (file-read-text full))
+
+;; The document at `path`, expanded where the command is, as if its text were
+;; written there. It shares the document's footnotes and heading ids. It may
+;; not have a (meta ...) of its own, and may not include itself, however far
+;; round; a refusal inside it says where it was included from.
+(: include-file (-> Ctx Call string (Vec Piece)))
+(defun (include-file cx c path)
+  (def full (relative-path cx path))
+  (def chain (record-ref cx including))
+  (when (vec-contains (vec-map path-absolute chain) (path-absolute full))
+    (refuse cx c (str full " is already being included: "
+                      (string-join (vec-add chain full) " -> "))))
+  (def text (read-relative cx c path))
+  (match (read-source text #:name full)
+    ((Err e) (refuse cx c e))
+    ((Ok src)
+     (match (record-ref src meta)
+       ((Some m) (refuse cx c (str full " begins with (meta ...), which only the document itself may")))
+       (None unit))
+     (def here (str (record-ref cx source) ":" (int->string (record-ref c line))
+                    ":" (int->string (record-ref c column))))
+     (record-set! cx (including (vec-add chain full)))
+     (def result (try (in-source cx full (fun () (expand-items cx (record-ref src content))))
+                      #:catch (System.IO.InvalidDataException)))
+     (record-set! cx (including chain))
+     (match result
+       ((Ok pieces) pieces)
+       ((Err e) (raise (cast Exception (Refused. (str (.-Message e) "\n  included from " here)))))))))
+
+;; ---------------------------------------------------------------------------
 ;; Typography
 ;; ---------------------------------------------------------------------------
 ;; In text, not in code: `---` is an em dash, `--` an en dash, `...` an
@@ -549,15 +721,27 @@
 (: expand (-> Source (Map string Command) (#:name string) (#:typography bool)
               (Result string Document)))
 (defun (expand src commands #:name "input" #:typography #t)
-  (def cx (Ctx (commands commands) (source name) (notes (vec-empty)) (ids (map-empty)) (depth 0)))
-  (match (try (decode (expand-items cx (record-ref src content)))
-              #:catch (System.IO.InvalidDataException))
+  (def cx (Ctx (commands commands) (source name) (including [name]) (notes (vec-empty))
+               (ids (map-empty)) (depth 0) (later (vec-empty))))
+  (match (try (finish cx src) #:catch (System.IO.InvalidDataException))
     ((Err e) (Err (.-Message e)))
-    ((Ok blocks)
-     (def notes (vec-map (fun (n) (option-ref-or n (vec-empty))) (record-ref cx notes)))
-     (Ok (Document (meta (record-ref src meta))
-                   (blocks (if typography (smarten blocks) blocks))
-                   (notes (if typography (vec-map smarten notes) notes)))))))
+    ((Ok doc)
+     (Ok (if typography
+             (Document (meta (record-ref doc meta))
+                       (blocks (smarten (record-ref doc blocks)))
+                       (notes (vec-map smarten (record-ref doc notes))))
+             doc)))))
+
+;; Every command run, and then what was deferred, given the document as it
+;; stood when every command had run.
+(: finish (-> Ctx Source Document))
+(defun (finish cx src)
+  (def blocks (decode (expand-items cx (record-ref src content))))
+  (def notes (vec-map (fun (n) (option-ref-or n (vec-empty))) (record-ref cx notes)))
+  (def before (Document (meta (record-ref src meta)) (blocks blocks) (notes notes)))
+  (Document (meta (record-ref src meta))
+            (blocks (resolve-blocks cx before (vec-empty) blocks))
+            (notes (vec-map (fun (n) (resolve-blocks cx before (vec-empty) n)) notes))))
 
 ;; Reads a document and runs its commands.
 (: read-document (-> string (Map string Command) (#:name string) (#:typography bool)

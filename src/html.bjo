@@ -32,8 +32,9 @@
 ;;           ((Div "aside" bs) (Some (str "<aside>" (blocks->html h bs) "</aside>")))
 ;;           (_ None))))
 ;;
-;; `#:id-prefix` goes in front of every id this writes, so that two documents
-;; on one page — a blog's front page — do not share a `note-1`.
+;; `#:id-prefix` goes in front of every id this writes, and every link to one
+;; (an href that begins with #), so that two documents on one page — a blog's
+;; front page — do not share a `note-1`.
 
 (export
   Html html-options default-html
@@ -87,6 +88,14 @@
 (: id (-> Html string string))
 (defun (id h s) (escape-attribute (str (record-ref h prefix) s)))
 
+;; A link to `#something` is to an id in this document, which has the prefix
+;; too: a table of contents and a reference keep working under `#:id-prefix`.
+(: href (-> Html string string))
+(defun (href h url)
+  (if (string-starts-with? url "#")
+      (str "#" (id h (.Substring url 1)))
+      (escape-attribute url)))
+
 ;; ---------------------------------------------------------------------------
 ;; Inlines
 ;; ---------------------------------------------------------------------------
@@ -108,7 +117,7 @@
     ((Emph xs) (str "<em>" (inlines->html h xs) "</em>"))
     ((Strong xs) (str "<strong>" (inlines->html h xs) "</strong>"))
     ((Code s) (str "<code>" (escape-html s) "</code>"))
-    ((Link url xs) (str "<a href=\"" (escape-attribute url) "\">" (inlines->html h xs) "</a>"))
+    ((Link url xs) (str "<a href=\"" (href h url) "\">" (inlines->html h xs) "</a>"))
     ((Image src alt) (str "<img src=\"" (escape-attribute src) "\" alt=\"" (escape-attribute alt) "\">"))
     (LineBreak "<br>")
     ((NoteRef n)
@@ -139,15 +148,31 @@
   (def n (+ level (record-ref h offset)))
   (str "h" (int->string (cond ((< n 1) 1) ((> n 6) 6) (else n)))))
 
-;; An item that is one paragraph is written without the `<p>`, as a list of
-;; short items is written by hand.
+;; An item that is one paragraph, and perhaps lists after it, is written
+;; without the `<p>`, as a list of short items — or a table of contents — is
+;; written by hand.
 (: item->html (-> Html (Vec Block) string))
 (defun (item->html h item)
-  (if (= (vec-length item) 1)
+  (if (tight? item)
       (match (vec-ref item 0)
-        ((Para xs) (str "<li>" (inlines->html h xs) "</li>"))
-        (other (str "<li>" (blocks->html h item) "</li>")))
+        ((Para xs)
+         (if (= (vec-length item) 1)
+             (str "<li>" (inlines->html h xs) "</li>")
+             (str "<li>" (inlines->html h xs) "\n" (blocks->html h (vec-remove-at item 0)) "\n</li>")))
+        (other (str "<li>\n" (blocks->html h item) "\n</li>")))
       (str "<li>\n" (blocks->html h item) "\n</li>")))
+
+;; A paragraph first, and nothing after it but lists.
+(: tight? (-> (Vec Block) bool))
+(defun (tight? item)
+  (and (not (vec-empty? item))
+       (match (vec-ref item 0)
+         ((Para xs)
+          (loop (:for i (range 1 (vec-length item)))
+                (:acc ok (folding #t (and ok (match (vec-ref item i)
+                                               ((ItemList numbered items) #t)
+                                               (_ #f)))))))
+         (_ #f))))
 
 (: plain-block (-> Html Block string))
 (defun (plain-block h b)
@@ -195,8 +220,9 @@
 (: notes->html (-> Html (Vec (Vec Block)) string))
 (defun (notes->html h notes)
   (str "<section class=\"notes\">\n<ol>\n"
-       (string-join (loop (:for i (range 0 (vec-length notes)))
-                          (:acc out (vecing (note->html h (+ i 1) (vec-ref notes i)))))
+       (string-join (loop (:for n (up-from 1))
+                          (:for note notes)
+                          (:acc (vecing (note->html h n note))))
                     "\n")
        "\n</ol>\n</section>"))
 

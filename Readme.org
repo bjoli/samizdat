@@ -30,13 +30,14 @@ puts them somewhere else.
 
 Files are called ~.sz~.
 
-** The five modules
+** The six modules
 
-| ~(samizdat read)~     | the reader: text to ~At~ items, text or commands, on bjorsec |
-| ~(samizdat doc)~      | the document: ~Block~, ~Inline~, ~Document~; a printer to s-expressions |
-| ~(samizdat expand)~   | runs the commands; what a command is written with            |
-| ~(samizdat commands)~ | ~standard-commands~                                          |
-| ~(samizdat html)~     | a ~Document~ as HTML                                         |
+| ~(samizdat read)~        | the reader: text to ~At~ items, text or commands, on bjorsec |
+| ~(samizdat doc)~         | the document: ~Block~, ~Inline~, ~Document~; a printer to s-expressions |
+| ~(samizdat expand)~      | runs the commands; what a command is written with            |
+| ~(samizdat commands)~    | ~standard-commands~                                          |
+| ~(samizdat lightweight)~ | commands that read Markdown's and Org's ways of writing: ~@read-list~ |
+| ~(samizdat html)~        | a ~Document~ as HTML                                         |
 
 ** Using it
 
@@ -160,16 +161,83 @@ to say; ~html-page~ only looks for a ~(title ...)~.
 | ~@section{...}~                    | a heading; ~#:id~ chooses its id                    |
 | ~@subsection{...}~ ~@subsubsection{...}~ | the levels below it                           |
 | ~@codeblock[#:lang "x"]{...}~      | a block of code; usually with a verbatim body       |
+| ~@codeblock[#:file "x.bjo"]~       | the code in that file                               |
 | ~@blockquote{...}~                 | a quotation, which may hold paragraphs              |
 | ~@itemlist{@item{...} ...}~        | a list; ~#:style ordered~ numbers it                |
+| ~@read-list{- ...}~                | a list written as Markdown and Org write one        |
 | ~@hr~                              | a rule                                              |
 | ~@div["class"]{...}~               | blocks with a class                                 |
 | ~@raw-block["html"]{...}~          | a block for one format                              |
+| ~@toc~                             | a table of contents; ~#:depth 3~ goes a level deeper |
+| ~@ref["id"]~ ~@ref["id"]{...}~     | a link to a heading, before or after it             |
+| ~@include["other.sz"]~             | another document, as if it were written here        |
 | ~@comment{...}~                    | nothing                                             |
 
 Each checks what it is given. A misspelt keyword says so rather than being
 ignored — ~@codeblock: takes no #:langauge; it takes #:lang~ — and so does a
 body where none is taken, or an argument that is missing or of the wrong kind.
+
+** Other files
+
+~@include["chapter.sz"]~ reads another document and expands it where the
+command is, as if its text were written there — so it shares the document's
+footnotes, heading ids and table of contents. The path is relative to the file
+the command is in, so an included file can include its own neighbours; a
+document read from a string, rather than from a file, is in the current
+directory.
+
+An included file may not begin with ~(meta ...)~: there is one document, and
+it has one. A file that includes itself, however far round, is refused with
+the chain of files, and a refusal from inside an included file says where it
+was included from:
+
+#+BEGIN_SRC text
+chapters/two.sz:14:3: @nope: there is no such command
+  included from post.sz:5:1
+#+END_SRC
+
+~@codeblock[#:lang "scheme" #:file "src/example.bjo"]~ is the code in that
+file, found the same way — so a post can show code that something else runs.
+
+** A table of contents, and references
+
+~@toc~ is the sections and subsections, as nested lists of links; ~#:depth 3~
+takes in the subsubsections, and ~#:depth 1~ leaves out the subsections. It
+lists the headings after it too, and those in included files: it is made once
+every command has run.
+
+~@ref["the-defaults"]~ is a link to the heading with that id —
+~@section{The Defaults}~, or one given ~#:id "the-defaults"~ — which says the
+heading's title; ~@ref["the-defaults"]{those}~ says something else. The heading
+may come before it or after. An id no heading has is refused.
+
+Both are made in a way a command of your own can use too; see ~defer-blocks~
+under Writing a command.
+
+** Lists, as Markdown and Org write them
+
+#+BEGIN_SRC text
+@read-list{
+- this parses things
+  - a list with nested lists
+- this is another post
+  and this continues the list item above.
+}
+#+END_SRC
+
+is an ~@itemlist~ of two items, with a list inside the first. The rules are
+Markdown's, with less to them:
+
+- An item begins with ~-~, ~+~ or ~*~, or a number and ~.~ or ~)~, and a
+  space. The first item's marker says whether the list is numbered.
+- An item indented past the marker of the one before it is in a list inside
+  that one.
+- A line of text goes on with the item above it, however it is indented.
+- After a blank line, text indented past an item's marker is a new paragraph
+  of that item. Text that is not is in no item, and refused.
+
+The body is still samizdat: ~- see @link["..."]{this}~ is an item with a link
+in it. ~(samizdat lightweight)~ is where more of these go.
 
 ** Paragraphs, and typography
 
@@ -231,10 +299,27 @@ What a command is written with, from ~(samizdat expand)~:
 | ~(add-note! cx (fun () blocks))~       | a footnote; answers its number, for a ~NoteRef~ |
 | ~(unique-id! cx text)~                 | an id made from text, used nowhere else in the document |
 | ~(text-command "text")~                | a command that stands for some text             |
+| ~(items->blocks cx items)~             | any ~At~ items — part of a body a command took apart — as paragraphs and blocks |
+| ~(defer-blocks cx f)~ ~(defer-inlines cx f)~ | a placeholder now, and later what ~f~ makes of the finished ~Document~ |
+| ~(include-file cx c path)~             | another document, expanded here                 |
+| ~(relative-path cx path)~ ~(read-relative cx c path)~ | a path relative to the file being expanded, and the text of it |
 
 ~@itemlist~ is the example of a command reading its body itself: it walks
 ~(body-items c)~, takes each ~@item~ and expands its body, and refuses anything
-else. That is how a command gets structure no body could express.
+else. That is how a command gets structure no body could express. ~@read-list~
+goes further, and reads its body a line at a time: ~at-lines~,
+~at-line-blank?~ and ~at-line-indentation~ in ~(samizdat read)~ are for that.
+
+A command that needs the whole document — what comes after it, or what is in
+included files — answers with ~defer-blocks~ or ~defer-inlines~. Its function
+is called once every command has run, with the document as it then stands, and
+what it makes goes where the placeholder was. ~@toc~ is one:
+
+#+BEGIN_SRC scheme
+(defer-blocks cx (fun (doc) (toc-of (document-headings doc))))
+#+END_SRC
+
+A refusal from such a function names the file its command was written in.
 
 ** The tree, and writing a converter
 
@@ -286,7 +371,11 @@ the options, so it can write what is inside with ~blocks->html~ and
 
 A code block is ~<pre><code class="language-scheme">~, the class highlight.js
 and Prism look for. A footnote is a ~<sup class="note-ref">~ link, and the notes
-are a ~<section class="notes">~ at the end, each with a link back.
+are a ~<section class="notes">~ at the end, each with a link back. A table of
+contents is a ~<div class="toc">~. A link whose href begins with ~#~ is to an
+id in the document, and gets ~#:id-prefix~ as the id does. A list item that is
+one paragraph, and perhaps lists after it, is written without a ~<p>~, as a
+Markdown renderer writes a short list.
 
 ** Errors
 
@@ -312,21 +401,22 @@ in the [...]: at line 1, column 18: a comma is not a separator here
 
 #+BEGIN_SRC sh
 bjo run tests/read.bjo      ;; 42 checks: the reader on its own
-bjo run tests/expand.bjo    ;; 39 checks: commands, paragraphs, typography, refusals
-bjo run tests/html.bjo      ;; 23 checks: the HTML converter
+bjo run tests/expand.bjo    ;; 66 checks: commands, paragraphs, typography, refusals
+bjo run tests/html.bjo      ;; 26 checks: the HTML converter
 #+END_SRC
 
 ~read~ reads markup and prints what came out as s-expressions with
 ~ats->string~: every rule above, positions, the meta form, and the reader's
 errors. ~expand~ runs the standard commands and compares the tree through
 ~document->sexp~, with a table of its own for a replaced command, a text
-command, and one that runs itself until the depth limit stops it. ~html~
-compares HTML as text, hooks and a whole page included.
+command, and one that runs itself until the depth limit stops it; then the
+table of contents, references, including — with the files in
+~tests/fixtures/~, a loop among them — and ~@read-list~. ~html~ compares HTML
+as text, hooks and a whole page included.
 
 ** Not yet
 
-- A table of contents, and references between sections: the headings and
-  their ids are all there, but nothing resolves a reference to one yet.
-- ~@include~, and code read from a file.
+- More of what Markdown and Org write quickly: a table, as Org writes one, is
+  the obvious next, and would want a ~Table~ in the tree.
 - A second converter — plain text, or LaTeX.
 - An ~@~ inside ~[...]~, for a command as an argument.

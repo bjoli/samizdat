@@ -119,6 +119,18 @@
           (str "<aside>\n<p>Press <kbd>C-x</kbd> <em>now</em>.</p>\n</aside>\n"
                "<div class=\"other\">\n<p>x</p>\n</div>"))
 
+  ;; --- the whole document ----------------------------------------------------
+  (expect "a table of contents: links, a nested list inside an item, no <p>"
+          (html-of "@toc\n@section{A}\n@subsection{B}")
+          (str "<div class=\"toc\">\n<ul>\n<li><a href=\"#a\">A</a>\n<ul>\n<li><a href=\"#b\">B</a></li>\n</ul>\n</li>\n</ul>\n</div>\n"
+               "<h2 id=\"a\">A</h2>\n<h3 id=\"b\">B</h3>"))
+  (expect "a link to an id in the document has the prefix, as the id does"
+          (html-with (html-options #:id-prefix "p-") "@ref[\"a\"] @link[\"#top\"]{up} @link[\"/x#y\"]{there}\n@section{A}")
+          "<p><a href=\"#p-a\">A</a> <a href=\"#p-top\">up</a> <a href=\"/x#y\">there</a></p>\n<h2 id=\"p-a\">A</h2>")
+  (expect "a list read as Markdown writes one"
+          (html-of "@read-list{\n- a\n  - b\n- c\n}")
+          "<ul>\n<li>a\n<ul>\n<li>b</li>\n</ul>\n</li>\n<li>c</li>\n</ul>")
+
   ;; --- a page -------------------------------------------------------------------
   (let ((page (html-page (doc-of "(meta (title \"Fish & chips\"))\nText.")
                          #:head "<link rel=\"stylesheet\" href=\"/site.css\">")))

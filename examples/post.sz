@@ -8,6 +8,8 @@ It does much more than this: it is a whole language.} A command is an
 @code{@"@"} and a name, and may have arguments in brackets and a body in braces.
 Everything else is text, and a blank line starts a new paragraph.
 
+@toc
+
 @section{Why another markup}
 
 Markdown is fine until you want something it does not have. Here, a command
@@ -46,6 +48,15 @@ share is taken off.
 @itemlist[#:style ordered]{
   @item{Numbered,}
   @item{if you ask.}
+}
+
+Or write one the way Markdown does:
+
+@read-list{
+- quicker to type,
+  - and nested by how far it is indented;
+- with @em{commands} in it as anywhere else, like a reference
+  back to @ref["code"].
 }
 
 @blockquote{

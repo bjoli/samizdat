@@ -38,6 +38,14 @@
     ((Ok d) (str "no error: " (document->sexp d)))
     ((Err e) e)))
 
+;; The tree of a document read from a file, or the error. The files are under
+;; tests/fixtures/, and the tests are run from the package's directory.
+(: file-tree (-> string string))
+(defun (file-tree path)
+  (match (read-document-file path standard-commands #:typography #f)
+    ((Ok d) (document->sexp d))
+    ((Err e) (str "error: " e))))
+
 ;; --- commands of the test's own -------------------------------------------
 
 ;; `@em` replaced: louder.
@@ -169,7 +177,7 @@
           "post.sz:1:1: @link: needs 1 argument in its [...]")
   (expect "a misspelt keyword"
           (refusal "@codeblock[#:langauge \"x\"]{y}")
-          "post.sz:1:1: @codeblock: takes no #:langauge; it takes #:lang")
+          "post.sz:1:1: @codeblock: takes no #:langauge; it takes #:lang, #:file")
   (expect "a keyword with no value"
           (refusal "@codeblock[#:lang]{y}")
           "post.sz:1:1: @codeblock: #:lang has no value after it")
@@ -190,6 +198,108 @@
           "post.sz:1:1: @hr: takes no body")
   (expect-true "the reader's refusals come through as they are"
                (string-starts-with? (refusal "@em{x") "post.sz: Parse error at line 1"))
+
+  ;; --- a table of contents ------------------------------------------------------
+  (expect "@toc lists sections and subsections, nested, and not what is deeper"
+          (tree "@toc\n@section{One}\n@subsection{One A}\n@subsubsection{Deep}\n@section{Two}")
+          (str "(div \"toc\" (bullets (item (para (link \"#one\" \"One\"))"
+               " (bullets (item (para (link \"#one-a\" \"One A\")))))"
+               " (item (para (link \"#two\" \"Two\")))))\n"
+               "(heading 1 \"one\" \"One\")\n(heading 2 \"one-a\" \"One A\")\n"
+               "(heading 3 \"deep\" \"Deep\")\n(heading 1 \"two\" \"Two\")"))
+  (expect "#:depth 3 lists those too"
+          (vec-ref (string-split (tree "@toc[#:depth 3]\n@section{One}\n@subsection{One A}\n@subsubsection{Deep}") "\n") 0)
+          (str "(div \"toc\" (bullets (item (para (link \"#one\" \"One\"))"
+               " (bullets (item (para (link \"#one-a\" \"One A\"))"
+               " (bullets (item (para (link \"#deep\" \"Deep\")))))))))"))
+  (expect "a subsection before any section is an item of its own"
+          (vec-ref (string-split (tree "@toc\n@subsection{A}\n@section{B}") "\n") 0)
+          "(div \"toc\" (bullets (item (bullets (item (para (link \"#a\" \"A\"))))) (item (para (link \"#b\" \"B\")))))")
+  (expect "no headings, no table"
+          (tree "@toc\nText.")
+          "(para \"Text.\")")
+  (expect "the headings of an included file are in it"
+          (vec-ref (string-split (tree "@toc\n@include[\"tests/fixtures/chapter.sz\"]") "\n") 0)
+          "(div \"toc\" (bullets (item (para (link \"#included\" \"Included\")))))")
+
+  ;; --- references -----------------------------------------------------------------
+  (expect "@ref says the heading's title, or its own, and may come first"
+          (tree "See @ref[\"later\"] and @ref[\"later\"]{this}.\n@section[#:id \"later\"]{The Later One}")
+          (str "(para \"See \" (link \"#later\" \"The Later One\") \" and \" (link \"#later\" \"this\") \".\")\n"
+               "(heading 1 \"later\" \"The Later One\")"))
+  (expect "a reference to no heading"
+          (refusal "@ref[\"nope\"]")
+          "post.sz:1:1: @ref: there is no heading with the id nope")
+  (expect "one in an included file names that file"
+          (refusal "@include[\"tests/fixtures/ref-bad.sz\"]")
+          "tests/fixtures/ref-bad.sz:1:6: @ref: there is no heading with the id missing")
+
+  ;; --- including ------------------------------------------------------------------
+  (expect "an included file is as if written in place, sharing notes and ids"
+          (file-tree "tests/fixtures/main.sz")
+          (str "(para \"Before.\")\n(heading 1 \"included\" \"Included\")\n"
+               "(para \"Text from the chapter.\" (note-ref 1))\n(para \"After.\" (note-ref 2))\n"
+               "(notes (note 1 (para \"A note in the chapter.\")) (note 2 (para \"Main's note.\")))"))
+  (expect "a path is relative to the file that has it"
+          (file-tree "tests/fixtures/nested.sz")
+          "(para \"Inner.\")\n(para \"Leaf.\")")
+  (expect "a file that is not there"
+          (refusal "@include[\"tests/fixtures/nope.sz\"]")
+          "post.sz:1:1: @include: there is no file tests/fixtures/nope.sz")
+  (expect "a file that includes itself, however far round"
+          (file-tree "tests/fixtures/loop-a.sz")
+          (str "error: tests/fixtures/loop-b.sz:1:1: @include: tests/fixtures/loop-a.sz is already being included:"
+               " tests/fixtures/loop-a.sz -> tests/fixtures/loop-b.sz -> tests/fixtures/loop-a.sz\n"
+               "  included from tests/fixtures/loop-a.sz:1:1"))
+  (expect "an included file may not have a meta form"
+          (refusal "@include[\"tests/fixtures/with-meta.sz\"]")
+          "post.sz:1:1: @include: tests/fixtures/with-meta.sz begins with (meta ...), which only the document itself may")
+  (expect "a refusal inside one says where it was included from"
+          (refusal "x\n@include[\"tests/fixtures/broken.sz\"]")
+          "tests/fixtures/broken.sz:2:1: @nope: there is no such command\n  included from post.sz:2:1")
+  (expect-true "and so does one that cannot be read"
+               (string-starts-with? (refusal "@include[\"tests/fixtures/unclosed.sz\"]")
+                                    "post.sz:1:1: @include: tests/fixtures/unclosed.sz: Parse error at line 2"))
+  (expect "code from a file"
+          (tree "@codeblock[#:lang \"scheme\" #:file \"tests/fixtures/snippet.scm\"]")
+          "(codeblock \"scheme\" \"(define (f x)\\n  x)\")")
+  (expect "but not from a file and a body"
+          (refusal "@codeblock[#:file \"tests/fixtures/snippet.scm\"]{x}")
+          "post.sz:1:1: @codeblock: takes its code from #:file or from its body, not both")
+
+  ;; --- lists as Markdown and Org write them ------------------------------------
+  (expect "the example: a nested list, and an item that goes on"
+          (tree "@read-list{\n- this parses things\n  - a list with nested lists\n- this is another post\n  and this continues the list item above.\n}")
+          (str "(bullets (item (para \"this parses things\") (bullets (item (para \"a list with nested lists\"))))"
+               " (item (para \"this is another post\\nand this continues the list item above.\")))"))
+  (expect "numbered, with . or )"
+          (tree "@read-list{\n1. one\n2) two\n}")
+          "(numbered (item (para \"one\")) (item (para \"two\")))")
+  (expect "+ and * are bullets too, and a numbered list may be inside"
+          (tree "@read-list{\n+ a\n  1. b\n  2. c\n* d\n}")
+          "(bullets (item (para \"a\") (numbered (item (para \"b\")) (item (para \"c\")))) (item (para \"d\")))")
+  (expect "a line of text goes on with its item, however it is indented"
+          (tree "@read-list{\n- one\ncontinues here\n-x is not a marker\n- two\n}")
+          "(bullets (item (para \"one\\ncontinues here\\n-x is not a marker\")) (item (para \"two\")))")
+  (expect "after a blank line, indented text is a paragraph of the item"
+          (tree "@read-list{\n- one\n\n  second paragraph\n\n- two\n}")
+          "(bullets (item (para \"one\") (para \"second paragraph\")) (item (para \"two\")))")
+  (expect "three deep, the whole list indented in its braces"
+          (tree "@read-list{\n  - a\n    - b\n      - c\n  - d\n}")
+          "(bullets (item (para \"a\") (bullets (item (para \"b\") (bullets (item (para \"c\")))))) (item (para \"d\")))")
+  (expect "commands in items"
+          (tree "@read-list{\n- @em{x} and @code{y}\n- see @link[\"u\"]{z}\n}")
+          "(bullets (item (para (em \"x\") \" and \" (code \"y\"))) (item (para \"see \" (link \"u\" \"z\"))))")
+  (expect "an empty one is nothing"
+          (tree "@read-list{}")
+          "")
+  (expect "a list begins with an item"
+          (refusal "@read-list{\nIntro\n- a\n}")
+          "post.sz:1:1: @read-list: begins with text, and a list begins with - or 1.: \"Intro\"")
+  (expect "text after a blank line, and not indented under an item"
+          (refusal "@read-list{\n- a\n\nafter\n}")
+          (str "post.sz:1:1: @read-list: has a line in no item: \"after\". After a blank line,"
+               " text is in an item when it is indented past the item's marker"))
 
   (println "expand ok")
   0)

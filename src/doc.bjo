@@ -22,6 +22,8 @@
   meta-values meta-string meta-strings
   ;; The text of some inlines, markup aside: for an id, an alt, a title.
   inlines->text
+  ;; Every heading, in order: for a table of contents.
+  document-headings
   ;; A converter to s-expressions, for tests and for looking.
   document->sexp blocks->sexp inlines->sexp)
 
@@ -111,10 +113,8 @@
   (match (meta-values doc name)
     ((Some values)
      (loop (:for v values)
-           (:acc out (folding (vec-empty)
-                              (match (textual v)
-                                ((Some s) (vec-add out s))
-                                (None out))))))
+           (:when-let (Some s) (textual v))
+           (:acc (vecing s))))
     (None (vec-empty))))
 
 ;; ---------------------------------------------------------------------------
@@ -138,6 +138,31 @@
     ((NoteRef n) "")
     ((Span c xs) (inlines->text xs))
     ((RawInline f s) "")))
+
+;; ---------------------------------------------------------------------------
+;; Headings
+;; ---------------------------------------------------------------------------
+
+;; The level, id and title of every heading in the document's blocks, in the
+;; order they come, those in quotations, lists and divs included. The notes
+;; are not looked in.
+(: document-headings (-> Document (Vec (Tuple int string (Vec Inline)))))
+(defun (document-headings doc)
+  (headings-in (record-ref doc blocks)))
+
+(: headings-in (-> (Vec Block) (Vec (Tuple int string (Vec Inline)))))
+(defun (headings-in bs)
+  (loop (:for b bs)
+        (:acc out (folding (vec-empty)
+                           (match b
+                             ((Heading level id xs) (vec-add out (Tuple level id xs)))
+                             ((Quote inner) (vec-merge out (headings-in inner)))
+                             ((Div c inner) (vec-merge out (headings-in inner)))
+                             ((ItemList numbered items)
+                              (vec-merge out (loop (:for item items)
+                                                   (:acc more (folding (vec-empty)
+                                                                       (vec-merge more (headings-in item)))))))
+                             (_ out))))))
 
 ;; ---------------------------------------------------------------------------
 ;; S-expressions
@@ -196,12 +221,15 @@
 ;; One block to a line, and the notes after them.
 (: document->sexp (-> Document string))
 (defun (document->sexp doc)
-  (def notes (record-ref doc notes))
-  (def body (string-join (vec-map block->sexp (record-ref doc blocks)) "\n"))
-  (if (vec-empty? notes)
-      body
-      (str body "\n"
-           (form "notes"
-                 (loop (:for i (range 0 (vec-length notes)))
-                       (:acc out (vecing (form "note" (vec-merge [(int->string (+ i 1))]
-                                                                 (vec-map block->sexp (vec-ref notes i)))))))))))
+  (with-return ret 
+    (def notes (record-ref doc notes))
+    (def body (string-join (vec-map block->sexp (record-ref doc blocks)) "\n"))
+    (when (empty? notes)
+      (ret body))
+    (str body "\n"
+         (form "notes"
+               ;; What even is this?
+               (loop (:for i (up-from 1))
+                     (:for inv notes)
+                     (:acc (vecing (form "note" (vec-merge [(int->string i)]
+                                                           (vec-map block->sexp inv))))))))))

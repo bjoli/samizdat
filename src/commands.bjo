@@ -21,12 +21,19 @@
 ;;     @section{...}                   a heading, with #:id to choose its id;
 ;;     @subsection{...}                the next level down,
 ;;     @subsubsection{...}             and the one below that
-;;     @codeblock[#:lang "x"]|{...}|   a block of code
+;;     @codeblock[#:lang "x"]|{...}|   a block of code, or with #:file "x.bjo"
+;;                                     the code in that file
 ;;     @blockquote{...}                a quotation, which may hold paragraphs
 ;;     @itemlist{@item{...} ...}       a list; #:style ordered numbers it
+;;     @read-list{- ...}               a list written as in Markdown or Org
 ;;     @hr                             a rule
 ;;     @div["class"]{...}              blocks with a class
 ;;     @raw-block["html"]{...}         a block for one format only
+;;
+;; The whole document
+;;     @toc                            a table of contents; #:depth 3 for more
+;;     @ref["id"]  @ref["id"]{...}     a link to a heading, anywhere in it
+;;     @include["other.sz"]            another document, as if written here
 ;;
 ;; And @comment{...}, which is nothing, as @;{...} is.
 ;;
@@ -39,6 +46,7 @@
 (import (samizdat read))
 (import (samizdat doc))
 (import (samizdat expand))
+(import (samizdat lightweight))
 
 ;; ---------------------------------------------------------------------------
 ;; Checking a call
@@ -128,11 +136,19 @@
                     (unique-id! cx (if (string-empty? id) (inlines->text title) id))
                     title))))
 
+;; The code is the body, or with #:file the file's text, relative to the
+;; document; a trailing newline in the file is not part of it.
 (: codeblock (-> Ctx Call (Vec Piece)))
 (defun (codeblock cx c)
-  (check-keywords! cx c ["lang"])
+  (check-keywords! cx c ["lang" "file"])
   (when (> (arg-count c) 0) (refuse cx c "takes no arguments; the language is #:lang"))
-  (block (CodeBlock (kw-string-or cx c "lang" "") (body-text cx c))))
+  (def file (kw-string-or cx c "file" ""))
+  (def text
+    (cond
+      ((string-empty? file) (body-text cx c))
+      ((has-body? c) (refuse cx c "takes its code from #:file or from its body, not both"))
+      (else (string-trim-end (string-replace (read-relative cx c file) "\r\n" "\n")))))
+  (block (CodeBlock (kw-string-or cx c "lang" "") text)))
 
 (: blockquote (-> Ctx Call (Vec Piece)))
 (defun (blockquote cx c)
@@ -185,12 +201,98 @@
 (defun (comment cx c) nothing)
 
 ;; ---------------------------------------------------------------------------
+;; What needs the whole document
+;; ---------------------------------------------------------------------------
+
+(type (: Entry (Alias (Tuple int string (Vec Inline)))))
+
+(: entry-level (-> Entry int))
+(defun (entry-level h) (match h ((Tuple level id xs) level)))
+
+;; The items for the headings from `i` on, at `level`, and where they stopped:
+;; at the end, or at a heading above `level`. A heading below it makes a list
+;; inside the item before it — or an item of its own, when there is none.
+(: toc-level (-> (Vec Entry) int int (Tuple (Vec (Vec Block)) int)))
+(defun (toc-level hs i level)
+  (let go ((i i) (items (vec-empty)))
+    (cond
+      ((>= i (vec-length hs)) (Tuple items i))
+      ((< (entry-level (vec-ref hs i)) level) (Tuple items i))
+      ((> (entry-level (vec-ref hs i)) level)
+       (match (toc-level hs i (entry-level (vec-ref hs i)))
+         ((Tuple sub next)
+          (def sublist (ItemList #f sub))
+          (def last (- (vec-length items) 1))
+          (go next (if (vec-empty? items)
+                       (vec-add items [sublist])
+                       (vec-set items last (vec-add (vec-ref items last) sublist)))))))
+      (else
+       (match (vec-ref hs i)
+         ((Tuple l id xs) (go (+ i 1) (vec-add items [(Para [(Link (str "#" id) xs)])]))))))))
+
+(: toc-of (-> (Vec Entry) (Vec Block)))
+(defun (toc-of hs)
+  (if (vec-empty? hs)
+      (vec-empty)
+      (let ((top (loop (:for h hs)
+                       (:acc least (folding 1000 (if (< (entry-level h) least) (entry-level h) least))))))
+        (match (toc-level hs 0 top)
+          ((Tuple items next) [(Div "toc" [(ItemList #f items)])])))))
+
+;; @toc, or @toc[#:depth 3]: the headings down to that level — sections and
+;; subsections by default — as nested lists of links. It is made once every
+;; command has run, so it lists the headings after it too, and in included
+;; files. A document with no headings has none.
+(: toc (-> Ctx Call (Vec Piece)))
+(defun (toc cx c)
+  (check-keywords! cx c ["depth"])
+  (no-body! cx c)
+  (when (> (arg-count c) 0) (refuse cx c "takes no arguments; the depth is #:depth"))
+  (def depth (kw-int-or cx c "depth" 2))
+  (defer-blocks cx (fun (doc)
+                     (toc-of (vec-filter (fun (h) (<= (entry-level h) depth))
+                                         (document-headings doc))))))
+
+(: heading-titled (-> (Vec Entry) string (Option (Vec Inline))))
+(defun (heading-titled hs target)
+  (loop (:for h hs)
+        (:acc found (folding None
+                             (match found
+                               ((Some xs) found)
+                               (None (match h
+                                       ((Tuple level id xs) (if (= id target) (Some xs) None)))))))))
+
+;; @ref["the-defaults"]: a link to the heading with that id, which says the
+;; heading's title; @ref["the-defaults"]{that section} says something else.
+;; The heading may come after the reference.
+(: reference (-> Ctx Call (Vec Piece)))
+(defun (reference cx c)
+  (check-keywords! cx c (vec-empty))
+  (def target (arg-string cx c 0))
+  (def text (if (has-body? c) (Some (expand-inlines cx c)) None))
+  (defer-inlines cx (fun (doc)
+                      (match (heading-titled (document-headings doc) target)
+                        (None (refuse cx c (str "there is no heading with the id " target)))
+                        ((Some title) [(Link (str "#" target) (option-ref-or text title))])))))
+
+;; @include["chapter.sz"]: that document, relative to this one, as if its text
+;; were written here.
+(: include (-> Ctx Call (Vec Piece)))
+(defun (include cx c)
+  (check-keywords! cx c (vec-empty))
+  (no-body! cx c)
+  (include-file cx c (arg-string cx c 0)))
+
+;; ---------------------------------------------------------------------------
 ;; The table
 ;; ---------------------------------------------------------------------------
 
 (: standard-commands (Map string Command))
 (def standard-commands
-  #map(("em" em)
+  #map(("toc" toc)
+       ("ref" reference)
+       ("include" include)
+       ("em" em)
        ("strong" strong)
        ("code" code)
        ("link" link)
@@ -205,6 +307,7 @@
        ("codeblock" codeblock)
        ("blockquote" blockquote)
        ("itemlist" itemlist)
+       ("read-list" read-list)
        ("item" item)
        ("hr" hr)
        ("div" div)

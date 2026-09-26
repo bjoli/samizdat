@@ -1,0 +1,228 @@
+;; This Source Code Form is subject to the terms of the Mozilla Public
+;; License, v. 2.0. If a copy of the MPL was not distributed with this
+;; file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+;; samizdat/src/lightweight.bjo — the module (samizdat lightweight).
+;;
+;; Commands that read a body written the way Markdown and Org write things,
+;; for what is quicker to type that way than with a command for every part.
+;; The body is still samizdat: commands work in it as anywhere else.
+;;
+;;     @read-list{
+;;     - this parses things
+;;       - a list with nested lists
+;;     - this is another post
+;;       and this continues the list item above.
+;;     }
+;;
+;; is an @itemlist of two @items, with another list inside the first.
+;;
+;; The rules, which are Markdown's with less to them:
+;;
+;;   - An item begins with `-`, `+` or `*`, or a number and `.` or `)`, and a
+;;     space. The first item's marker says whether the list is numbered.
+;;   - An item indented past the marker of the one before it is in a list
+;;     inside that one.
+;;   - A line of text continues the item above it, however it is indented.
+;;   - After a blank line, text indented past an item's marker is a new
+;;     paragraph of that item. Text that is not is in no item, and refused.
+
+(export read-list)
+
+(import (std prelude))
+(import (samizdat read))
+(import (samizdat doc))
+(import (samizdat expand))
+
+;; ---------------------------------------------------------------------------
+;; Lines
+;; ---------------------------------------------------------------------------
+
+;; A line of a list: nothing; the start of an item — how far its marker is
+;; indented, whether it numbers, and what follows the marker; or text, with
+;; its indentation taken off.
+(type (: Line (Union Blank
+                     (Bullet int bool (Vec At))
+                     (Plain int (Vec At)))))
+
+(: digits-from (-> string int int))
+(defun (digits-from s i)
+  (if (and (< i (string-length s))
+           (>= (string-code-ref s i) 48)
+           (<= (string-code-ref s i) 57))
+      (digits-from s (+ i 1))
+      i))
+
+;; The marker at the start of `s`, if there is one: its length, the space
+;; after it included, and whether it numbers. A marker at the very end of the
+;; text counts, since a command may come right after it: `- @em{x}` is read as
+;; the text "- " and a command.
+(: marker (-> string (Option (Tuple int bool))))
+(defun (marker s)
+  (def n (string-length s))
+  (def first (if (> n 0) (string-code-ref s 0) 0))
+  (cond
+    ((= n 0) None)
+    ;; - + *
+    ((or (= first 45) (= first 43) (= first 42))
+     (cond
+       ((= n 1) (Some (Tuple 1 #f)))
+       ((= (string-code-ref s 1) 32) (Some (Tuple 2 #f)))
+       (else None)))
+    (else
+     (def d (digits-from s 0))
+     (cond
+       ((or (= d 0) (> d 9) (>= d n)) None)
+       ;; . )
+       ((not (or (= (string-code-ref s d) 46) (= (string-code-ref s d) 41))) None)
+       ((= (+ d 1) n) (Some (Tuple (+ d 1) #t)))
+       ((= (string-code-ref s (+ d 1)) 32) (Some (Tuple (+ d 2) #t)))
+       (else None)))))
+
+(: with-first-text (-> (Vec At) string (Vec At)))
+(defun (with-first-text line s)
+  (if (string-empty? s) (vec-remove-at line 0) (vec-set line 0 (Text s))))
+
+(: classify (-> (Vec At) Line))
+(defun (classify line)
+  (if (at-line-blank? line)
+      Blank
+      (match (vec-ref line 0)
+        ((Cmd c) (Plain 0 line))
+        ((Text s)
+         (def k (at-line-indentation line))
+         (def rest (.Substring s k))
+         (match (marker rest)
+           ((Some (Tuple len numbered))
+            (Bullet k numbered (with-first-text line (string-trim-start (.Substring rest len)))))
+           (None (Plain k (with-first-text line rest))))))))
+
+(: line-indent (-> Line int))
+(defun (line-indent l)
+  (match l
+    (Blank -1)
+    ((Bullet k numbered xs) k)
+    ((Plain k xs) k)))
+
+(: next-non-blank (-> (Vec Line) int int))
+(defun (next-non-blank lines i)
+  (cond
+    ((>= i (vec-length lines)) i)
+    (else (match (vec-ref lines i)
+            (Blank (next-non-blank lines (+ i 1)))
+            (_ i)))))
+
+(: bullet-at? (-> Line int bool))
+(defun (bullet-at? l indent)
+  (match l
+    ((Bullet k numbered xs) (= k indent))
+    (_ #f)))
+
+;; ---------------------------------------------------------------------------
+;; Items
+;; ---------------------------------------------------------------------------
+
+;; What an item holds, in order: its text, and the lists inside it.
+(type (: Part (Union (Words (Vec At))
+                     (Sublist bool (Vec (Vec Part))))))
+
+;; Text added to an item: after the words it ends with, with `joint` between —
+;; a newline, or a blank line for a new paragraph — or, after a list inside
+;; it, as words of their own.
+(: add-words (-> (Vec Part) string (Vec At) (Vec Part)))
+(defun (add-words parts joint content)
+  (def last (- (vec-length parts) 1))
+  (match (vec-ref parts last)
+    ((Words ws) (vec-set parts last (Words (vec-merge (vec-add ws (Text joint)) content))))
+    (_ (vec-add parts (Words content)))))
+
+;; The list whose first item is the bullet at `start`, indented `indent`:
+;; whether it numbers, its items, and the line it stopped at.
+(: parse-list (-> (Vec Line) int int (Tuple bool (Vec (Vec Part)) int)))
+(defun (parse-list lines start indent)
+  (def numbered (match (vec-ref lines start)
+                  ((Bullet k num xs) num)
+                  (_ #f)))
+  (let go ((i start) (items (vec-empty)))
+    (def j (next-non-blank lines i))
+    (if (and (< j (vec-length lines)) (bullet-at? (vec-ref lines j) indent))
+        (match (parse-item lines j indent)
+          ((Tuple item next) (go next (vec-add items item))))
+        (Tuple numbered items i))))
+
+;; The item whose bullet is at `start`, and the line it stopped at: a bullet
+;; no further in than its own, or a blank line after which nothing is
+;; indented past its marker.
+(: parse-item (-> (Vec Line) int int (Tuple (Vec Part) int)))
+(defun (parse-item lines start indent)
+  (def n (vec-length lines))
+  (def first (match (vec-ref lines start)
+               ((Bullet k num xs) xs)
+               (_ (vec-empty))))
+  (let go ((i (+ start 1)) (parts [(Words first)]))
+    (if (>= i n)
+        (Tuple parts i)
+        (match (vec-ref lines i)
+          (Blank
+           (def j (next-non-blank lines i))
+           (if (or (>= j n) (<= (line-indent (vec-ref lines j)) indent))
+               (Tuple parts i)
+               (match (vec-ref lines j)
+                 ((Plain k xs) (go (+ j 1) (add-words parts "\n\n" xs)))
+                 (_ (go j parts)))))
+          ((Plain k xs) (go (+ i 1) (add-words parts "\n" xs)))
+          ((Bullet k num xs)
+           (if (> k indent)
+               (match (parse-list lines i k)
+                 ((Tuple numbered items next) (go next (vec-add parts (Sublist numbered items)))))
+               (Tuple parts i)))))))
+
+(: list->block (-> Ctx bool (Vec (Vec Part)) Block))
+(defun (list->block cx numbered items)
+  (ItemList numbered (vec-map (fun (item) (item->blocks cx item)) items)))
+
+(: item->blocks (-> Ctx (Vec Part) (Vec Block)))
+(defun (item->blocks cx parts)
+  (loop (:for p parts)
+        (:acc out (folding (vec-empty)
+                           (match p
+                             ((Words ws) (vec-merge out (items->blocks cx ws)))
+                             ((Sublist numbered items) (vec-add out (list->block cx numbered items))))))))
+
+;; ---------------------------------------------------------------------------
+;; The command
+;; ---------------------------------------------------------------------------
+
+;; A line as it was written, near enough, for a message.
+(: line-text (-> (Vec At) string))
+(defun (line-text line)
+  (string-trim (string-join (vec-map (fun (item)
+                                       (match item
+                                         ((Text s) s)
+                                         ((Cmd c) (str "@" (record-ref c name) "..."))))
+                                     line)
+                            "")))
+
+(: read-list (-> Ctx Call (Vec Piece)))
+(defun (read-list cx c)
+  (check-keywords! cx c (vec-empty))
+  (when (> (arg-count c) 0) (refuse cx c "takes no arguments"))
+  (unless (has-body? c) (refuse cx c "needs a body: {...}"))
+  (def raw (at-lines (body-items c)))
+  (def lines (vec-map classify raw))
+  (def n (vec-length lines))
+  (def start (next-non-blank lines 0))
+  (if (>= start n)
+      nothing
+      (match (vec-ref lines start)
+        ((Bullet k num xs)
+         (match (parse-list lines start k)
+           ((Tuple numbered items next)
+            (def rest (next-non-blank lines next))
+            (when (< rest n)
+              (refuse cx c (str "has a line in no item: \"" (line-text (vec-ref raw rest))
+                                "\". After a blank line, text is in an item when it is"
+                                " indented past the item's marker")))
+            (block (list->block cx numbered items)))))
+        (_ (refuse cx c (str "begins with text, and a list begins with - or 1.: \""
+                             (line-text (vec-ref raw start)) "\""))))))
