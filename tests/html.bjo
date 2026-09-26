@@ -131,6 +131,14 @@
           (html-of "@read-list{\n- a\n  - b\n- c\n}")
           "<ul>\n<li>a\n<ul>\n<li>b</li>\n</ul>\n</li>\n<li>c</li>\n</ul>")
 
+  (expect "a table: caption, head, a tbody for each group, aligned cells"
+          (html-of "@read-table{\n#+CAPTION: Cups\n| Name | Cups |\n|------+------|\n| Bob | 12 |\n|------+------|\n| Eve | 3 |\n}")
+          (str "<table>\n<caption>Cups</caption>\n"
+               "<thead>\n<tr><th>Name</th><th style=\"text-align: right\">Cups</th></tr>\n</thead>\n"
+               "<tbody>\n<tr><td>Bob</td><td style=\"text-align: right\">12</td></tr>\n</tbody>\n"
+               "<tbody>\n<tr><td>Eve</td><td style=\"text-align: right\">3</td></tr>\n</tbody>\n"
+               "</table>"))
+
   ;; --- a page -------------------------------------------------------------------
   (let ((page (html-page (doc-of "(meta (title \"Fish & chips\"))\nText.")
                          #:head "<link rel=\"stylesheet\" href=\"/site.css\">")))

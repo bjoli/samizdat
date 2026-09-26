@@ -193,7 +193,48 @@
           "\n</" tag ">"))
     (Rule "<hr>")
     ((Div c bs) (str "<div class=\"" (escape-attribute c) "\">\n" (blocks->html h bs) "\n</div>"))
-    ((RawBlock format s) (if (= format "html") s ""))))
+    ((RawBlock format s) (if (= format "html") s ""))
+    ((TableBlock t) (table->html h t))))
+
+;; A <table>: the caption, the head in a <thead>, and each group of the rest
+;; in a <tbody> of its own, as Org exports one.
+(: table->html (-> Html Table string))
+(defun (table->html h t)
+  (def aligns (record-ref t aligns))
+  (def caption (record-ref t caption))
+  (def head (record-ref t head))
+  (def bodies (record-ref t bodies))
+  (str "<table>\n"
+       (if (vec-empty? caption) "" (str "<caption>" (inlines->html h caption) "</caption>\n"))
+       (if (vec-empty? head) "" (str "<thead>\n" (rows->html h "th" aligns head) "\n</thead>\n"))
+       (string-join (vec-map (fun (group) (str "<tbody>\n" (rows->html h "td" aligns group) "\n</tbody>\n"))
+                             bodies)
+                    "")
+       "</table>"))
+
+(: rows->html (-> Html string (Vec Align) (Vec (Vec (Vec Inline))) string))
+(defun (rows->html h tag aligns rows)
+  (string-join (vec-map (fun (row) (row->html h tag aligns row)) rows) "\n"))
+
+(: align-attribute (-> Align string))
+(defun (align-attribute a)
+  (match a
+    (AlignDefault "")
+    (AlignLeft " style=\"text-align: left\"")
+    (AlignCenter " style=\"text-align: center\"")
+    (AlignRight " style=\"text-align: right\"")))
+
+;; A cell past the end of `aligns` is set as the converter pleases.
+(: row->html (-> Html string (Vec Align) (Vec (Vec Inline)) string))
+(defun (row->html h tag aligns row)
+  (str "<tr>"
+       (string-join (loop (:for cell row)
+                          (:for i (up-from 0))
+                          (:let align (if (< i (vec-length aligns)) (vec-ref aligns i) AlignDefault))
+                          (:acc (vecing (str "<" tag (align-attribute align) ">"
+                                             (inlines->html h cell) "</" tag ">"))))
+                    "")
+       "</tr>"))
 
 ;; ---------------------------------------------------------------------------
 ;; Notes, and a document

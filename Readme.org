@@ -165,6 +165,7 @@ to say; ~html-page~ only looks for a ~(title ...)~.
 | ~@blockquote{...}~                 | a quotation, which may hold paragraphs              |
 | ~@itemlist{@item{...} ...}~        | a list; ~#:style ordered~ numbers it                |
 | ~@read-list{- ...}~                | a list written as Markdown and Org write one        |
+| ~@read-table{... }~                | a table written as Org writes one, or Markdown      |
 | ~@hr~                              | a rule                                              |
 | ~@div["class"]{...}~               | blocks with a class                                 |
 | ~@raw-block["html"]{...}~          | a block for one format                              |
@@ -238,6 +239,39 @@ Markdown's, with less to them:
 
 The body is still samizdat: ~- see @link["..."]{this}~ is an item with a link
 in it. ~(samizdat lightweight)~ is where more of these go.
+
+** Tables, as Org writes them
+
+#+BEGIN_SRC text
+@read-table{
+#+CAPTION: What they drink
+| Name  | Cups | Of       |
+|-------+------+----------|
+| Alice |    3 | @em{tea} |
+| Bob   |   12 | coffee   |
+}
+#+END_SRC
+
+- A row is a line that begins with ~|~, and its cells are what the ~|~ s
+  divide. ~\|~ is a ~|~ in a cell, and a command in one stays whole.
+- A line of ~-~, ~+~ and ~|~ is a rule. The rows above the first rule are the
+  head, and further rules divide the rest into groups — each a ~<tbody>~ in
+  HTML, as Org exports them. Rules before the first row and after the last
+  divide nothing.
+- Markdown's delimiter row, ~|:---|:---:|---:|~, is a rule too, and its colons
+  set the columns' alignment; so does a row of Org's cookies, ~| <l> | <r10> |~,
+  which is not a row of the table. The widths are passed over.
+- A column nobody aligned whose cells are mostly numbers is set to the right,
+  as Org exports it.
+- ~#+CAPTION:~ gives the caption, and so does ~#:caption "..."~. Other ~#+~
+  lines — ~#+NAME:~, ~#+TBLFM:~ — are passed over, so a table can be pasted
+  from an Org file as it is.
+- A short row is filled with empty cells.
+
+In the tree it is a ~TableBlock~, which holds a ~Table~: a caption, an
+alignment for each column, the head's rows, and the groups of the rest. A row
+is its cells and a cell is text. That is what Org's tables are, and Markdown's
+fit in it: one head row, one group.
 
 ** Paragraphs, and typography
 
@@ -332,7 +366,12 @@ A refusal from such a function names the file its command was written in.
   (: Block (Union (Para (Vec Inline)) (Heading int string (Vec Inline))
                   (CodeBlock string string) (Quote (Vec Block))
                   (ItemList bool (Vec (Vec Block))) Rule
-                  (Div string (Vec Block)) (RawBlock string string))))
+                  (Div string (Vec Block)) (RawBlock string string)
+                  (TableBlock Table)))
+  (: Table (Record (: caption (Vec Inline))
+                   (: aligns (Vec Align))              ; AlignDefault AlignLeft AlignCenter AlignRight
+                   (: head (Vec (Vec (Vec Inline))))    ; rows of cells of text
+                   (: bodies (Vec (Vec (Vec (Vec Inline))))))))
 
 (type (: Document (Record (: meta (Option Bjodat))
                           (: blocks (Vec Block))
@@ -372,7 +411,9 @@ the options, so it can write what is inside with ~blocks->html~ and
 A code block is ~<pre><code class="language-scheme">~, the class highlight.js
 and Prism look for. A footnote is a ~<sup class="note-ref">~ link, and the notes
 are a ~<section class="notes">~ at the end, each with a link back. A table of
-contents is a ~<div class="toc">~. A link whose href begins with ~#~ is to an
+contents is a ~<div class="toc">~. A table has its caption, a ~<thead>~, a
+~<tbody>~ for each group, and ~style="text-align: ..."~ on an aligned column's
+cells. A link whose href begins with ~#~ is to an
 id in the document, and gets ~#:id-prefix~ as the id does. A list item that is
 one paragraph, and perhaps lists after it, is written without a ~<p>~, as a
 Markdown renderer writes a short list.
@@ -401,8 +442,8 @@ in the [...]: at line 1, column 18: a comma is not a separator here
 
 #+BEGIN_SRC sh
 bjo run tests/read.bjo      ;; 42 checks: the reader on its own
-bjo run tests/expand.bjo    ;; 66 checks: commands, paragraphs, typography, refusals
-bjo run tests/html.bjo      ;; 26 checks: the HTML converter
+bjo run tests/expand.bjo    ;; 73 checks: commands, paragraphs, typography, refusals
+bjo run tests/html.bjo      ;; 27 checks: the HTML converter
 #+END_SRC
 
 ~read~ reads markup and prints what came out as s-expressions with
@@ -411,12 +452,10 @@ errors. ~expand~ runs the standard commands and compares the tree through
 ~document->sexp~, with a table of its own for a replaced command, a text
 command, and one that runs itself until the depth limit stops it; then the
 table of contents, references, including — with the files in
-~tests/fixtures/~, a loop among them — and ~@read-list~. ~html~ compares HTML
+~tests/fixtures/~, a loop among them — ~@read-list~ and ~@read-table~. ~html~ compares HTML
 as text, hooks and a whole page included.
 
 ** Not yet
 
-- More of what Markdown and Org write quickly: a table, as Org writes one, is
-  the obvious next, and would want a ~Table~ in the tree.
 - A second converter — plain text, or LaTeX.
 - An ~@~ inside ~[...]~, for a command as an argument.

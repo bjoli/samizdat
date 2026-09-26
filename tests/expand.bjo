@@ -296,6 +296,36 @@
   (expect "a list begins with an item"
           (refusal "@read-list{\nIntro\n- a\n}")
           "post.sz:1:1: @read-list: begins with text, and a list begins with - or 1.: \"Intro\"")
+  ;; --- tables as Org writes them -----------------------------------------------
+  (expect "an Org table: a caption, a head, commands in cells, numbers to the right"
+          (tree (str "@read-table{\n#+CAPTION: What they drink\n| Name  | Cups | Of       |\n"
+                     "|-------+------+----------|\n| Alice |    3 | @em{tea} |\n| Bob   |   12 | coffee   |\n}"))
+          (str "(table (aligns default right default) (caption \"What they drink\")"
+               " (head (row (cell \"Name\") (cell \"Cups\") (cell \"Of\")))"
+               " (body (row (cell \"Alice\") (cell \"3\") (cell (em \"tea\")))"
+               " (row (cell \"Bob\") (cell \"12\") (cell \"coffee\"))))"))
+  (expect "Markdown's delimiter row is a rule, and its colons align"
+          (tree "@read-table{\n| Left | Center | Right |\n|:-----|:------:|------:|\n| a | b | c |\n}")
+          (str "(table (aligns left center right) (head (row (cell \"Left\") (cell \"Center\") (cell \"Right\")))"
+               " (body (row (cell \"a\") (cell \"b\") (cell \"c\"))))"))
+  (expect "rules around and between, groups, and a row of cookies"
+          (tree "@read-table{\n|---+---|\n| <l> | <r5> |\n| a | b |\n|---+---|\n| 1 | x |\n|---+---|\n| 2 | y |\n|---+---|\n}")
+          (str "(table (aligns left right) (head (row (cell \"a\") (cell \"b\")))"
+               " (body (row (cell \"1\") (cell \"x\"))) (body (row (cell \"2\") (cell \"y\"))))"))
+  (expect "no rule, no head; \\| in a cell; a short row filled; #:caption; #+ lines passed over"
+          (tree "@read-table[#:caption \"Pipes\"]{\n#+NAME: pipes\n| a \\| b | c |\n| d |\n#+TBLFM: $2=1\n}")
+          (str "(table (aligns default default) (caption \"Pipes\")"
+               " (body (row (cell \"a | b\") (cell \"c\")) (row (cell \"d\") (cell))))"))
+  (expect-true "a column that is more than half numbers, as Org counts them"
+               (string-starts-with? (tree "@read-table{\n| x | 1,234.5 |\n| y | -2% |\n| z | n/a |\n}")
+                                    "(table (aligns default right)"))
+  (expect "an empty table is nothing"
+          (tree "@read-table{}")
+          "")
+  (expect "a line that is not a row"
+          (refusal "@read-table{\n| a |\nnot a row\n}")
+          "post.sz:1:1: @read-table: has a line that is not a row, a rule or a #+ line: \"not a row\"")
+
   (expect "text after a blank line, and not indented under an item"
           (refusal "@read-list{\n- a\n\nafter\n}")
           (str "post.sz:1:1: @read-list: has a line in no item: \"after\". After a blank line,"

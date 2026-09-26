@@ -33,7 +33,7 @@
   inline block nothing
   ;; The body.
   has-body? body-items body-text expand-inlines expand-blocks expand-items
-  items->blocks
+  items->blocks items->inlines
   ;; Answering once the document is finished: a table of contents, a reference.
   defer-blocks defer-inlines
   ;; Other files, relative to the document being expanded.
@@ -204,6 +204,11 @@
 (: items->blocks (-> Ctx (Vec At) (Vec Block)))
 (defun (items->blocks cx items)
   (decode (expand-items cx items)))
+
+;; The same, expanded as text: a block among them is refused, as `c`'s.
+(: items->inlines (-> Ctx Call (Vec At) (Vec Inline)))
+(defun (items->inlines cx c items)
+  (merge-strs (as-inlines cx c (expand-items cx items))))
 
 ;; ---------------------------------------------------------------------------
 ;; Paragraphs
@@ -566,6 +571,7 @@
     ((Quote bs) [(Quote (resolve-blocks cx doc active bs))])
     ((ItemList numbered items)
      [(ItemList numbered (vec-map (fun (item) (resolve-blocks cx doc active item)) items))])
+    ((TableBlock t) [(TableBlock (map-table-text (fun (xs) (resolve-inlines cx doc active xs)) t))])
     (_ [b])))
 
 (: resolve-inlines (-> Ctx Document (Vec int) (Vec Inline) (Vec Inline)))
@@ -706,6 +712,7 @@
     ((Quote bs) (Quote (smarten bs)))
     ((ItemList numbered items) (ItemList numbered (vec-map smarten items)))
     ((Div c bs) (Div c (smarten bs)))
+    ((TableBlock t) (TableBlock (map-table-text smarten-line t)))
     (_ b)))
 
 (: smarten (-> (Vec Block) (Vec Block)))

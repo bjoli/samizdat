@@ -26,6 +26,7 @@
 ;;     @blockquote{...}                a quotation, which may hold paragraphs
 ;;     @itemlist{@item{...} ...}       a list; #:style ordered numbers it
 ;;     @read-list{- ...}               a list written as in Markdown or Org
+;;     @read-table{| ... |}            a table written as in Org, or Markdown
 ;;     @hr                             a rule
 ;;     @div["class"]{...}              blocks with a class
 ;;     @raw-block["html"]{...}         a block for one format only
@@ -308,6 +309,7 @@
        ("blockquote" blockquote)
        ("itemlist" itemlist)
        ("read-list" read-list)
+       ("read-table" read-table)
        ("item" item)
        ("hr" hr)
        ("div" div)
