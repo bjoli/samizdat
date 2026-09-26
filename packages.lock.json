@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "Markdig": {
+        "type": "Transitive",
+        "resolved": "0.44.0",
+        "contentHash": "X+CYMjcUnh/yO24wOSQxVFLiGqWrrtXJ5M7toHiM1Zk4Fg9UMLN5fkaq6FSOWH+mIprsHHgDMlq3MJhmrXalhg=="
+      },
+      "bjopackage.markdig-bjolang": {
+        "type": "Project",
+        "dependencies": {
+          "Markdig": "[0.44.0, )"
+        }
+      }
+    }
+  }
+}

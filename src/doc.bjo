@@ -51,6 +51,10 @@
   (: Inline (Union (Str string)
                    (Emph (Vec Inline))
                    (Strong (Vec Inline))
+                   ;; Struck through: ~~this~~ in Markdown, +this+ in Org.
+                   (Strike (Vec Inline))
+                   ;; A box, ticked or not: a task list item's [ ] or [x].
+                   (Checkbox bool)
                    ;; Code, as it is written.
                    (Code string)
                    ;; Where it goes, and what it says.
@@ -145,6 +149,8 @@
     ((Str s) s)
     ((Emph xs) (inlines->text xs))
     ((Strong xs) (inlines->text xs))
+    ((Strike xs) (inlines->text xs))
+    ((Checkbox checked) "")
     ((Code s) s)
     ((Link url xs) (inlines->text xs))
     ((Image src alt) alt)
@@ -219,6 +225,8 @@
     ((Str s) (quoted s))
     ((Emph xs) (form "em" (vec-map inline->sexp xs)))
     ((Strong xs) (form "strong" (vec-map inline->sexp xs)))
+    ((Strike xs) (form "strike" (vec-map inline->sexp xs)))
+    ((Checkbox checked) (if checked "(checkbox #t)" "(checkbox #f)"))
     ((Code s) (form "code" [(quoted s)]))
     ((Link url xs) (form "link" (vec-insert (vec-map inline->sexp xs) 0 (quoted url))))
     ((Image src alt) (form "image" [(quoted src) (quoted alt)]))

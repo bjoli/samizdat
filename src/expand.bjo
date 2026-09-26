@@ -594,6 +594,7 @@
        (None [(Span class (resolve-inlines cx doc active xs))])))
     ((Emph xs) [(Emph (resolve-inlines cx doc active xs))])
     ((Strong xs) [(Strong (resolve-inlines cx doc active xs))])
+    ((Strike xs) [(Strike (resolve-inlines cx doc active xs))])
     ((Link url xs) [(Link url (resolve-inlines cx doc active xs))])
     (_ [x])))
 
@@ -695,6 +696,7 @@
     ((Str s) (match (smarten-text s before) ((Tuple t last) (Tuple (Str t) last))))
     ((Emph xs) (match (smarten-inlines xs before) ((Tuple ys last) (Tuple (Emph ys) last))))
     ((Strong xs) (match (smarten-inlines xs before) ((Tuple ys last) (Tuple (Strong ys) last))))
+    ((Strike xs) (match (smarten-inlines xs before) ((Tuple ys last) (Tuple (Strike ys) last))))
     ((Link url xs) (match (smarten-inlines xs before) ((Tuple ys last) (Tuple (Link url ys) last))))
     ((Span c xs) (match (smarten-inlines xs before) ((Tuple ys last) (Tuple (Span c ys) last))))
     (LineBreak (Tuple x #\space))

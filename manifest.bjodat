@@ -10,7 +10,12 @@
   (depends
     (package (name (bjorsec))
              (version (version-at-least "0.1.0"))
-             (source (git (url "https://github.com/bjoli/bjorsec")))))
+             (source (git (url "https://github.com/bjoli/bjorsec"))))
+    ;; @markdown. It brings Markdig as a NuGet package, so building anything
+    ;; with samizdat needs the .NET SDK's dotnet command.
+    ;; TODO before publishing: a git source, once markdig-bjolang is on GitHub.
+    (package (name (markdig-bjolang))
+             (source (path (dir "../markdig-bjolang")))))
 
   ;; A library: there is no src/main.bjo, so `bjo build` builds every module
   ;; under src/ rather than a program.

@@ -64,3 +64,20 @@ Or write one the way Markdown does:
 }
 
 Press @kbd{C-x C-s} to save, and mail linus@example.com if it breaks.
+
+@section{Markdown too}
+
+@markdown|{
+Some things are *quicker* in Markdown, and it is translated into the same
+tree as the rest of the post:
+
+| Written in | Good for                         |
+|:-----------|:---------------------------------|
+| samizdat   | the whole post                   |
+| Markdown   | ~~everything~~ lists and tables  |
+
+- [x] footnotes,[^md] numbered with the rest
+- [ ] a command inside, like |@kbd{C-c C-c}
+
+[^md]: This one comes from Markdown.
+}|

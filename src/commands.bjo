@@ -48,6 +48,7 @@
 (import (samizdat doc))
 (import (samizdat expand))
 (import (samizdat lightweight))
+(import (samizdat markdown))
 
 ;; ---------------------------------------------------------------------------
 ;; Checking a call
@@ -310,6 +311,8 @@
        ("itemlist" itemlist)
        ("read-list" read-list)
        ("read-table" read-table)
+       ("markdown" markdown)
+       ("include-markdown" include-markdown)
        ("item" item)
        ("hr" hr)
        ("div" div)

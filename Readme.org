@@ -30,13 +30,14 @@ puts them somewhere else.
 
 Files are called ~.sz~.
 
-** The six modules
+** The seven modules
 
 | ~(samizdat read)~        | the reader: text to ~At~ items, text or commands, on bjorsec |
 | ~(samizdat doc)~         | the document: ~Block~, ~Inline~, ~Document~; a printer to s-expressions |
 | ~(samizdat expand)~      | runs the commands; what a command is written with            |
 | ~(samizdat commands)~    | ~standard-commands~                                          |
-| ~(samizdat lightweight)~ | commands that read Markdown's and Org's ways of writing: ~@read-list~ |
+| ~(samizdat lightweight)~ | commands that read Markdown's and Org's ways of writing: ~@read-list~, ~@read-table~ |
+| ~(samizdat markdown)~    | ~@markdown~ and ~@include-markdown~, through markdig-bjolang   |
 | ~(samizdat html)~        | a ~Document~ as HTML                                         |
 
 ** Using it
@@ -166,6 +167,8 @@ to say; ~html-page~ only looks for a ~(title ...)~.
 | ~@itemlist{@item{...} ...}~        | a list; ~#:style ordered~ numbers it                |
 | ~@read-list{- ...}~                | a list written as Markdown and Org write one        |
 | ~@read-table{... }~                | a table written as Org writes one, or Markdown      |
+| ~@markdown{...}~                   | Markdown, translated into the document              |
+| ~@include-markdown["post.md"]~     | a Markdown file, translated the same way            |
 | ~@hr~                              | a rule                                              |
 | ~@div["class"]{...}~               | blocks with a class                                 |
 | ~@raw-block["html"]{...}~          | a block for one format                              |
@@ -273,6 +276,44 @@ alignment for each column, the head's rows, and the groups of the rest. A row
 is its cells and a cell is text. That is what Org's tables are, and Markdown's
 fit in it: one head row, one group.
 
+** Markdown
+
+#+BEGIN_SRC text
+@markdown|{
+## Why
+
+Because *some* things are quicker to write this way.[^1] See |@ref["why"].
+
+- [x] tables, task lists, ~~strikethrough~~ and footnotes, as GitHub has them
+
+[^1]: And some are not.
+}|
+#+END_SRC
+
+Markdown is read by [[https://github.com/bjoli/markdig-bjolang][markdig-bjolang]]
+— Markdig, GitHub flavoured — and translated into samizdat's own tree, so
+nothing of Markdown is left once it is read: a heading is a ~Heading~ with an
+id that ~@toc~ and ~@ref~ know, a footnote is one of the document's notes,
+numbered with the rest, a table is a ~TableBlock~, raw HTML is ~RawBlock~ and
+~RawInline~ for HTML, and the typography pass runs over it like any other
+text. What Markdown has and samizdat does not is left out: a link's title, and
+the number an ordered list starts at.
+
+Write it ~@markdown|{...}|~ when the Markdown has braces or ~@~ s in it, which
+Markdown usually does; ~@markdown{...}~ works too, with the braces balanced.
+
+*Commands work inside*: ~@em{x}~ in a ~{...}~ body, ~|@em{x}~ in a ~|{...}|~
+one. Each is set aside before Markdig reads the text, as a placeholder it
+passes through as ordinary characters, and put back, expanded, where the
+placeholder ends up. In text it is text; in code it is its text. A command
+that makes a block — ~|@codeblock[...]{...}~, ~|@toc~ — goes in a paragraph of
+its own, and in running text it is refused.
+
+~@include-markdown["post.md"]~ reads a Markdown file, relative to the
+document, as it is. Its YAML front matter is set aside; ~@~ is just a character
+in it. ~markdown->pieces~ in ~(samizdat markdown)~ is the same translation, for
+a command of your own.
+
 ** Paragraphs, and typography
 
 Nobody says where a paragraph is. Text between blocks is gathered into
@@ -360,6 +401,7 @@ A refusal from such a function names the file its command was written in.
 #+BEGIN_SRC scheme
 (type-rec
   (: Inline (Union (Str string) (Emph (Vec Inline)) (Strong (Vec Inline))
+                   (Strike (Vec Inline)) (Checkbox bool)
                    (Code string) (Link string (Vec Inline)) (Image string string)
                    LineBreak (NoteRef int) (Span string (Vec Inline))
                    (RawInline string string)))
@@ -411,7 +453,8 @@ the options, so it can write what is inside with ~blocks->html~ and
 A code block is ~<pre><code class="language-scheme">~, the class highlight.js
 and Prism look for. A footnote is a ~<sup class="note-ref">~ link, and the notes
 are a ~<section class="notes">~ at the end, each with a link back. A table of
-contents is a ~<div class="toc">~. A table has its caption, a ~<thead>~, a
+contents is a ~<div class="toc">~. Struck text is ~<del>~, and a checkbox a
+disabled ~<input type="checkbox">~, as GitHub writes them. A table has its caption, a ~<thead>~, a
 ~<tbody>~ for each group, and ~style="text-align: ..."~ on an aligned column's
 cells. A link whose href begins with ~#~ is to an
 id in the document, and gets ~#:id-prefix~ as the id does. A list item that is
@@ -438,13 +481,32 @@ An @image["a.png", "b"]
 in the [...]: at line 1, column 18: a comma is not a separator here
 #+END_SRC
 
+** Installing it
+
+#+BEGIN_SRC scheme
+(depends
+  (package (name (samizdat))
+           (version (version-at-least "0.2.0"))
+           (source (git (url "https://github.com/bjoli/samizdat")))))
+#+END_SRC
+
+bjorsec and markdig-bjolang come along with it. markdig-bjolang brings Markdig
+as a NuGet package, so building anything that uses samizdat needs the .NET
+SDK's ~dotnet~ command; see Bjolang's ~Docs/Projects.org~, "NuGet packages".
+
 ** Running the tests
 
 #+BEGIN_SRC sh
 bjo run tests/read.bjo      ;; 42 checks: the reader on its own
 bjo run tests/expand.bjo    ;; 73 checks: commands, paragraphs, typography, refusals
 bjo run tests/html.bjo      ;; 27 checks: the HTML converter
+bjo run tests/markdown.bjo  ;; 15 checks: Markdown, translated
 #+END_SRC
+
+~markdown~ reads @markdown and @include-markdown into samizdat's tree: every
+kind of Markdown node, footnotes numbered with the document's notes, headings
+in ~@toc~, commands inside — in text, in code, alone in a paragraph and
+refused in running text — and a file from ~tests/fixtures/~.
 
 ~read~ reads markup and prints what came out as s-expressions with
 ~ats->string~: every rule above, positions, the meta form, and the reader's
