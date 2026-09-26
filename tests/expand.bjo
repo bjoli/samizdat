@@ -1,0 +1,195 @@
+;; This Source Code Form is subject to the terms of the Mozilla Public
+;; License, v. 2.0. If a copy of the MPL was not distributed with this
+;; file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+;; samizdat/tests/expand.bjo — commands, paragraphs and typography.
+;;
+;;     bjo run tests/expand.bjo
+;;
+;; Each check reads markup, runs the standard commands on it, and compares the
+;; tree that came out, written as s-expressions by `document->sexp`: one block
+;; to a line, then the notes.
+
+(import (std prelude))
+(import (std simpletest))
+(import (samizdat read))
+(import (samizdat doc))
+(import (samizdat expand))
+(import (samizdat commands))
+
+(: tree-with (-> (Map string Command) bool string string))
+(defun (tree-with commands typography text)
+  (match (read-document text commands #:name "post.sz" #:typography typography)
+    ((Ok d) (document->sexp d))
+    ((Err e) (str "error: " e))))
+
+;; The tree, dashes and quotes as they were typed.
+(: tree (-> string string))
+(defun (tree text) (tree-with standard-commands #f text))
+
+;; The tree with the typography pass.
+(: smart (-> string string))
+(defun (smart text) (tree-with standard-commands #t text))
+
+;; The message, or the tree when there was none.
+(: refusal (-> string string))
+(defun (refusal text)
+  (match (read-document text standard-commands #:name "post.sz")
+    ((Ok d) (str "no error: " (document->sexp d)))
+    ((Err e) e)))
+
+;; --- commands of the test's own -------------------------------------------
+
+;; `@em` replaced: louder.
+(: shout (-> Ctx Call (Vec Piece)))
+(defun (shout cx c) (inline (Strong (expand-inlines cx c))))
+
+;; A command that runs itself again, which only the depth limit stops.
+(: again (-> Ctx Call (Vec Piece)))
+(defun (again cx c) (expand-items cx (vec-add (vec-empty) (Cmd c))))
+
+;; `@version["1.2"]`: an argument, checked.
+(: version (-> Ctx Call (Vec Piece)))
+(defun (version cx c)
+  (check-keywords! cx c ["prefix"])
+  (inline (Code (str (kw-string-or cx c "prefix" "v") (arg-string cx c 0)))))
+
+(def mine
+  (map-merge standard-commands
+             #map(("bjo" (text-command "Bjolang"))
+                  ("em" shout)
+                  ("again" again)
+                  ("version" version))))
+
+(defun (main args)
+  ;; --- paragraphs ---------------------------------------------------------
+  (expect "a blank line between paragraphs, and any number of them"
+          (tree "One.\n\nTwo\nlines.\n\n\n   \nThree.")
+          "(para \"One.\")\n(para \"Two\\nlines.\")\n(para \"Three.\")")
+  (expect "space around a paragraph is not part of it"
+          (tree "\n\n   Text.   \n\n")
+          "(para \"Text.\")")
+  (expect "a block ends a paragraph without a blank line"
+          (tree "Before\n@section{The Title}\nAfter")
+          "(para \"Before\")\n(heading 1 \"the-title\" \"The Title\")\n(para \"After\")")
+  (expect "a blank line split by a comment is still one"
+          (tree "a\n@; hidden\n\nb")
+          "(para \"a\")\n(para \"b\")")
+  (expect "@comment is nothing"
+          (tree "a @comment{x @em{y}} b")
+          "(para \"a  b\")")
+
+  ;; --- text ---------------------------------------------------------------
+  (expect "emphasis, nested"
+          (tree "Some @em{emphasis} and @strong{strong @em{nested}}.")
+          "(para \"Some \" (em \"emphasis\") \" and \" (strong \"strong \" (em \"nested\")) \".\")")
+  (expect "code is taken as written"
+          (tree "Call @code{f {x}} or @code|{g @x}|.")
+          "(para \"Call \" (code \"f {x}\") \" or \" (code \"g @x\") \".\")")
+  (expect "a link, and one whose url is its text"
+          (tree "@link[\"https://a.example\"]{here} and @link[\"https://b.example\"]")
+          "(para (link \"https://a.example\" \"here\") \" and \" (link \"https://b.example\" \"https://b.example\"))")
+  (expect "an image"
+          (tree "@image[\"cat.png\" #:alt \"A cat\"]")
+          "(para (image \"cat.png\" \"A cat\"))")
+  (expect "a line break"
+          (tree "one @br two")
+          "(para \"one \" (br) \" two\")")
+  (expect "a span and a div have a class"
+          (tree "@div[aside]{Press @span[\"kbd\"]{C-x}.}")
+          "(div \"aside\" (para \"Press \" (span \"kbd\" \"C-x\") \".\"))")
+  (expect "raw text and a raw block are for one format"
+          (tree "a @raw[\"html\"]{<wbr>} b\n@raw-block[\"html\"]|{<hr class=\"x\">}|")
+          "(para \"a \" (raw \"html\" \"<wbr>\") \" b\")\n(raw-block \"html\" \"<hr class=\\\"x\\\">\")")
+
+  ;; --- blocks -------------------------------------------------------------
+  (expect "headings at three levels, each id unique, or chosen"
+          (tree "@section{A}\n@section{A}\n@subsection[#:id \"mine\"]{B}\n@subsubsection{C, d!}")
+          "(heading 1 \"a\" \"A\")\n(heading 1 \"a-2\" \"A\")\n(heading 2 \"mine\" \"B\")\n(heading 3 \"c-d\" \"C, d!\")")
+  (expect "a code block, indented with the markup"
+          (tree "Look:\n\n  @codeblock[#:lang \"scheme\"]|{\n    (define (f x)\n      x)\n  }|")
+          "(para \"Look:\")\n(codeblock \"scheme\" \"(define (f x)\\n  x)\")")
+  (expect "a quotation holds paragraphs"
+          (tree "@blockquote{\n  Quoted.\n\n  Twice.\n}")
+          "(quote (para \"Quoted.\") (para \"Twice.\"))")
+  (expect "a list, an item with two paragraphs"
+          (tree "@itemlist{\n  @item{One}\n  @item{Two\n\n    paras}\n}")
+          "(bullets (item (para \"One\")) (item (para \"Two\") (para \"paras\")))")
+  (expect "a numbered list"
+          (tree "@itemlist[#:style ordered]{@item{a} @item{b}}")
+          "(numbered (item (para \"a\")) (item (para \"b\")))")
+  (expect "a rule"
+          (tree "a\n@hr\nb")
+          "(para \"a\")\n(rule)\n(para \"b\")")
+
+  ;; --- notes ----------------------------------------------------------------
+  (expect "footnotes are numbered as they come, a note in a note after it"
+          (tree "Text.@note{A note.\n\nIn two paragraphs.} More.@note{Second@note{nested}}")
+          (str "(para \"Text.\" (note-ref 1) \" More.\" (note-ref 2))\n"
+               "(notes (note 1 (para \"A note.\") (para \"In two paragraphs.\"))"
+               " (note 2 (para \"Second\" (note-ref 3))) (note 3 (para \"nested\")))"))
+
+  ;; --- typography ---------------------------------------------------------
+  (expect "quotes curl, dashes and dots join, across an inline"
+          (smart "She said \"hi\" -- then --- left... It's '@em{x}'.")
+          "(para \"She said “hi” – then — left… It’s ‘\" (em \"x\") \"’.\")")
+  (expect "not in code"
+          (smart "@code{a -- \"b\"}\n@codeblock|{c --- 'd'}|")
+          "(para (code \"a -- \\\"b\\\"\"))\n(codeblock \"\" \"c --- 'd'\")")
+  (expect "headings and notes too"
+          (smart "@section{\"A\"}\nx@note{\"n\"}")
+          "(heading 1 \"a\" \"“A”\")\n(para \"x\" (note-ref 1))\n(notes (note 1 (para \"“n”\")))")
+
+  ;; --- a table of one's own --------------------------------------------------
+  (expect "a text command, and one that replaces a standard one"
+          (tree-with mine #f "I like @bjo and @em{this}.")
+          "(para \"I like Bjolang and \" (strong \"this\") \".\")")
+  (expect "arguments and keywords, read by the command"
+          (tree-with mine #f "@version[\"1.2\"] @version[\"2\" #:prefix \"r\"]")
+          "(para (code \"v1.2\") \" \" (code \"r2\"))")
+  (expect-true "a command that runs itself is stopped"
+               (string-contains? (tree-with mine #f "x @again")
+                                 "post.sz:1:3: @again: commands are running more than 200 deep"))
+
+  ;; --- meta -------------------------------------------------------------------
+  (match (read-document "(meta (title \"Hi there\") (tags web http))\nText." standard-commands)
+    ((Err e) (fail (str "meta: " e)))
+    ((Ok d)
+     (expect "a meta string" (meta-string d "title") (Some "Hi there"))
+     (expect "meta strings" (string-join (meta-strings d "tags") ",") "web,http")
+     (expect "no such clause" (meta-string d "date") None)
+     (expect "and the body after it" (document->sexp d) "(para \"Text.\")")))
+
+  ;; --- refusals ---------------------------------------------------------------
+  (expect "a command nobody defined, and where it is"
+          (refusal "a\n  @nope{x}")
+          "post.sz:2:3: @nope: there is no such command")
+  (expect "a missing argument"
+          (refusal "@link{x}")
+          "post.sz:1:1: @link: needs 1 argument in its [...]")
+  (expect "a misspelt keyword"
+          (refusal "@codeblock[#:langauge \"x\"]{y}")
+          "post.sz:1:1: @codeblock: takes no #:langauge; it takes #:lang")
+  (expect "a keyword with no value"
+          (refusal "@codeblock[#:lang]{y}")
+          "post.sz:1:1: @codeblock: #:lang has no value after it")
+  (expect "a keyword of the wrong kind"
+          (refusal "@image[\"x.png\" #:alt 5]")
+          "post.sz:1:1: @image: #:alt should be a string, and is 5")
+  (expect "a block where only text can go"
+          (refusal "x @em{a @section{b}}")
+          "post.sz:1:3: @em: has a block in it, where only text can go")
+  (expect "an item outside a list"
+          (refusal "@item{x}")
+          "post.sz:1:1: @item: belongs inside an @itemlist")
+  (expect "text in a list"
+          (refusal "@itemlist{@item{a} b}")
+          "post.sz:1:1: @itemlist: holds only @item{...}, and there is text in it")
+  (expect "a body where none is taken"
+          (refusal "@hr{x}")
+          "post.sz:1:1: @hr: takes no body")
+  (expect-true "the reader's refusals come through as they are"
+               (string-starts-with? (refusal "@em{x") "post.sz: Parse error at line 1"))
+
+  (println "expand ok")
+  0)

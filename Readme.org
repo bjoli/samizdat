@@ -1,0 +1,332 @@
+* samizdat — a markup for writing, after Scribble
+
+samizdat reads text written like Racket's Scribble —
+
+#+BEGIN_SRC text
+(meta (title "Cookies, carefully")
+      (date "2026-09-26")
+      (tags bjoweb http))
+
+Setting a cookie is one header, but getting it @em{right} is the hard
+part.@note{See @link["https://www.rfc-editor.org/rfc/rfc6265"]{RFC 6265}.}
+
+@section{The defaults}
+
+@codeblock[#:lang "scheme"]|{
+  (with-cookie (text "saved") "theme" "dark" #:max-age 31536000)
+}|
+#+END_SRC
+
+— into a tree that says what the document is and nothing about how it looks,
+which a converter then prints. HTML is the converter that comes with it.
+
+A command is a Bjolang function, and a table of them is a map from names to
+functions. A blog that wants ~@youtube~ writes one and merges it over the
+standard table; nothing in samizdat has to know. What makes a function enough
+is that a command gets its call as it was read — arguments and body not yet
+expanded — and decides what to do with them: ~@em~ expands its body and wraps
+it, ~@code~ takes it as it is written, ~@note~ expands it into paragraphs and
+puts them somewhere else.
+
+Files are called ~.sz~.
+
+** The five modules
+
+| ~(samizdat read)~     | the reader: text to ~At~ items, text or commands, on bjorsec |
+| ~(samizdat doc)~      | the document: ~Block~, ~Inline~, ~Document~; a printer to s-expressions |
+| ~(samizdat expand)~   | runs the commands; what a command is written with            |
+| ~(samizdat commands)~ | ~standard-commands~                                          |
+| ~(samizdat html)~     | a ~Document~ as HTML                                         |
+
+** Using it
+
+#+BEGIN_SRC scheme
+(import (samizdat expand))
+(import (samizdat commands))
+(import (samizdat html))
+
+(match (read-document-file "posts/cookies.sz" standard-commands)
+  ((Ok doc) (file-write-text "cookies.html" (html-page doc)))
+  ((Err e) (println e)))
+#+END_SRC
+
+~read-document~ does the same for a string, with ~#:name~ for what a message
+calls it. Both take ~#:typography #f~ to leave dashes and quotes as they were
+typed. ~document->html~ is the document without the page around it, for a
+template of your own.
+
+~examples/render.bjo~ is a whole blog in one file: commands of its own, hooks
+for how the converter writes them, the meta form read into a record, and a
+page around the result.
+
+#+BEGIN_SRC sh
+bjo run examples/render.bjo examples/post.sz     # writes examples/post.html
+#+END_SRC
+
+** The syntax
+
+#+BEGIN_SRC text
+@name[args]{body}   a command; [args] and {body} are both optional,
+                    and come right after the name, with no space
+@name               a command with neither
+@|name|             the same, where a letter follows: @|bjo|s
+@||                 nothing, to keep two things apart
+@"text"             text, as a string literal: @"@" is an @, @"}" a brace
+@; ...              a comment to the end of the line, the newline included
+@;{...}             a comment to the matching brace
+|{...}|             a body in which only |@ starts a command
+#+END_SRC
+
+A name is a letter and then letters, digits and ~- _ * /~. Not a full stop, a
+comma, a colon, ~!~ or ~?~, which end sentences: ~see @toc.~ is the command
+~toc~ and then a full stop.
+
+*The arguments are bjodat* — strings, numbers, symbols, ~#:keywords~, lists
+and vecs, exactly as in a ~.bjodat~ file — so ~@image["cat.png" #:alt "A cat"]~
+has one positional argument and one keyword. A comma is not a separator.
+
+*The body* is text and commands. Its braces must balance, and a balanced pair
+is text: ~@code{f {x}}~ is the code ~f {x}~. At the top level of a document a
+brace is an ordinary character.
+
+*A verbatim body*, ~|{ ... }|~, is for code: an ~@~ in it is a character, and
+only ~|@name~ is a command. When the text has ~}|~ in it, put punctuation
+between the bar and the brace, and the same turned around at the end:
+~|<{ ... }>|~, ~|(({ ... }))|~. A ~|{ }|~ inside one is text.
+
+*An ~@~ right after a letter or a digit is text*, so that ~linus@example.com~
+needs nothing done to it — unless the name after it has a ~[~, ~{~ or ~|~ right
+after it, which is how a footnote on a word is written: ~word@note{...}~. To
+put a command against a word that ends where its name begins, use
+~@|name|~, which is always a command.
+
+*Indentation.* A body over several lines loses the blank line after its ~{~,
+the blank line before its ~}~, and the indentation its lines have in common. So
+a code block may be indented with the markup around it:
+
+#+BEGIN_SRC text
+@itemlist{
+  @item{A list,}
+  @item{and in it
+
+    a second paragraph.}
+}
+#+END_SRC
+
+A first line with text on it, right after the ~{~, is left as it is, since it
+did not begin at a margin.
+
+** The meta form
+
+A document may begin with a ~(meta ...)~ form, which bjodat reads:
+
+#+BEGIN_SRC text
+(meta (title "Writing in samizdat")
+      (date "2026-09-26")
+      (tags samizdat bjolang))
+#+END_SRC
+
+~(meta-string doc "title")~ is ~(Some "Writing in samizdat")~ and
+~(meta-strings doc "tags")~ is ~["samizdat" "bjolang"]~. For more than that,
+read it into a record of your own, the way a manifest is read:
+
+#+BEGIN_SRC scheme
+(import (text bjodat))
+
+(def/bjodat-type
+  (: PostMeta (Record #:tag meta
+                      (: title string)
+                      (: date string #:default "")
+                      (: tags (List Symbol) #:rest #:default Nil))))
+
+(match (record-ref doc meta)
+  ((Some m) (bjodat->PostMeta m))         ; (Result string PostMeta)
+  (None (Err "no meta")))
+#+END_SRC
+
+samizdat itself gives the form no meaning. What its clauses are is the blog's
+to say; ~html-page~ only looks for a ~(title ...)~.
+
+** The standard commands
+
+| ~@em{...}~ ~@strong{...}~          | emphasis, and strong emphasis                       |
+| ~@code{...}~                       | code, as written                                    |
+| ~@link["url"]{...}~                | a link; ~@link["url"]~ shows the url                |
+| ~@image["src" #:alt "..."]~        | an image                                            |
+| ~@br~                              | a line break                                        |
+| ~@span["class"]{...}~              | text with a class, for a converter to do something with |
+| ~@raw["html"]{...}~                | text for one format; every other converter leaves it out |
+| ~@note{...}~                       | a footnote, which may hold paragraphs               |
+| ~@section{...}~                    | a heading; ~#:id~ chooses its id                    |
+| ~@subsection{...}~ ~@subsubsection{...}~ | the levels below it                           |
+| ~@codeblock[#:lang "x"]{...}~      | a block of code; usually with a verbatim body       |
+| ~@blockquote{...}~                 | a quotation, which may hold paragraphs              |
+| ~@itemlist{@item{...} ...}~        | a list; ~#:style ordered~ numbers it                |
+| ~@hr~                              | a rule                                              |
+| ~@div["class"]{...}~               | blocks with a class                                 |
+| ~@raw-block["html"]{...}~          | a block for one format                              |
+| ~@comment{...}~                    | nothing                                             |
+
+Each checks what it is given. A misspelt keyword says so rather than being
+ignored — ~@codeblock: takes no #:langauge; it takes #:lang~ — and so does a
+body where none is taken, or an argument that is missing or of the wrong kind.
+
+** Paragraphs, and typography
+
+Nobody says where a paragraph is. Text between blocks is gathered into
+paragraphs: a blank line ends one, and so does a block command, blank line or
+not. Space at either end of a paragraph is not part of it.
+
+After that, text that is not code is made typographic: ~---~ is an em dash,
+~--~ an en dash, ~...~ an ellipsis, and straight quotes are curly — opening
+after a space, a bracket or a dash, closing otherwise. What came before is
+carried across inline commands, so the quote after ~@em{word}~ closes.
+~#:typography #f~ turns it off.
+
+** Writing a command
+
+A command is ~(-> Ctx Call (Vec Piece))~: the document's state, the call as
+it was read, and what it makes — inlines and blocks, any number of each.
+
+#+BEGIN_SRC scheme
+(import (samizdat read))
+(import (samizdat doc))
+(import (samizdat expand))
+(import (samizdat commands))
+
+;; @aside{...}: paragraphs set apart.
+(: aside (-> Ctx Call (Vec Piece)))
+(defun (aside cx c)
+  (check-keywords! cx c (vec-empty))
+  (block (Div "aside" (expand-blocks cx c))))
+
+;; @version["1.2"], or @version["1.2" #:prefix "r"]
+(: version (-> Ctx Call (Vec Piece)))
+(defun (version cx c)
+  (check-keywords! cx c ["prefix"])
+  (inline (Code (str (kw-string-or cx c "prefix" "v") (arg-string cx c 0)))))
+
+(def commands
+  (map-merge standard-commands
+             #map(("aside" aside)
+                  ("version" version)
+                  ("bjolang" (text-command "Bjolang")))))
+#+END_SRC
+
+~map-merge~ lets the second map win, so a command of yours replaces a standard
+one of the same name.
+
+What a command is written with, from ~(samizdat expand)~:
+
+| ~(inline x)~ ~(block x)~ ~nothing~     | what to answer                                  |
+| ~(expand-inlines cx c)~                | the body, expanded as text; a block in it is refused |
+| ~(expand-blocks cx c)~                 | the body, expanded into paragraphs and blocks   |
+| ~(body-text cx c)~                     | the body as written; a command in it counts as its text |
+| ~(body-items c)~ ~(has-body? c)~       | the body as it was read, ~At~ items             |
+| ~(arg-string cx c i)~ ~(arg-string-or cx c i s)~ ~(arg-count c)~ | positional arguments, from 0 |
+| ~(kw-string-or cx c "k" s)~ ~kw-int-or~ ~kw-bool-or~ ~kw-symbol-or~ | keywords |
+| ~(positional c)~ ~(keyword c "k")~     | the ~Bjodat~ values themselves                  |
+| ~(check-keywords! cx c ["k" ...])~     | refuses any other keyword, and one with no value |
+| ~(refuse cx c "why")~                  | stops, with where the command is                |
+| ~(add-note! cx (fun () blocks))~       | a footnote; answers its number, for a ~NoteRef~ |
+| ~(unique-id! cx text)~                 | an id made from text, used nowhere else in the document |
+| ~(text-command "text")~                | a command that stands for some text             |
+
+~@itemlist~ is the example of a command reading its body itself: it walks
+~(body-items c)~, takes each ~@item~ and expands its body, and refuses anything
+else. That is how a command gets structure no body could express.
+
+** The tree, and writing a converter
+
+#+BEGIN_SRC scheme
+(type-rec
+  (: Inline (Union (Str string) (Emph (Vec Inline)) (Strong (Vec Inline))
+                   (Code string) (Link string (Vec Inline)) (Image string string)
+                   LineBreak (NoteRef int) (Span string (Vec Inline))
+                   (RawInline string string)))
+  (: Block (Union (Para (Vec Inline)) (Heading int string (Vec Inline))
+                  (CodeBlock string string) (Quote (Vec Block))
+                  (ItemList bool (Vec (Vec Block))) Rule
+                  (Div string (Vec Block)) (RawBlock string string))))
+
+(type (: Document (Record (: meta (Option Bjodat))
+                          (: blocks (Vec Block))
+                          (: notes (Vec (Vec Block))))))
+#+END_SRC
+
+A converter is a function from a ~Document~, and matching on these two unions
+is all of it: the compiler says when a case is missing. ~Span~ and ~Div~ are
+for what the rest does not cover, with a class a converter may know something
+about and otherwise treats as a plain container. ~RawInline~ and ~RawBlock~
+are for one format, which its converter passes through and every other one
+leaves out. ~document->sexp~ in ~(samizdat doc)~ is a converter about forty
+lines long, which the tests use.
+
+*** The HTML one
+
+| ~(document->html doc)~               | the blocks, then the footnotes                |
+| ~(html-page doc #:title #:head #:lang)~ | a whole page around it                     |
+| ~(html-options ...)~                 | what ~#:with~ takes, for either of those      |
+
+~html-options~ takes ~#:heading-offset~ (default 1, so a section is an ~<h2>~
+under the page's ~<h1>~), ~#:id-prefix~ (for two documents on one page, whose
+~note-1~ would otherwise clash), and two hooks. A hook is asked about each
+block or inline first, and answers ~None~ for what it leaves alone; it is handed
+the options, so it can write what is inside with ~blocks->html~ and
+~inlines->html~:
+
+#+BEGIN_SRC scheme
+(defun (asides h b)
+  (match b
+    ((Div "aside" bs) (Some (str "<aside>\n" (blocks->html h bs) "\n</aside>")))
+    (_ None)))
+
+(document->html doc #:with (html-options #:block-hook asides))
+#+END_SRC
+
+A code block is ~<pre><code class="language-scheme">~, the class highlight.js
+and Prism look for. A footnote is a ~<sup class="note-ref">~ link, and the notes
+are a ~<section class="notes">~ at the end, each with a link back.
+
+** Errors
+
+A document that cannot be read, or whose commands refuse, is an ~Err~ with a
+message that says where:
+
+#+BEGIN_SRC text
+post.sz: Parse error at line 3, column 9:
+and more
+        ^
+Expecting: '}' to end the body
+
+post.sz:1:1: @link: needs 1 argument in its [...]
+post.sz:1:1: @codeblock: takes no #:langauge; it takes #:lang
+
+post.sz: Parse error at line 1, column 24:
+An @image["a.png", "b"]
+                       ^
+in the [...]: at line 1, column 18: a comma is not a separator here
+#+END_SRC
+
+** Running the tests
+
+#+BEGIN_SRC sh
+bjo run tests/read.bjo      ;; 42 checks: the reader on its own
+bjo run tests/expand.bjo    ;; 39 checks: commands, paragraphs, typography, refusals
+bjo run tests/html.bjo      ;; 23 checks: the HTML converter
+#+END_SRC
+
+~read~ reads markup and prints what came out as s-expressions with
+~ats->string~: every rule above, positions, the meta form, and the reader's
+errors. ~expand~ runs the standard commands and compares the tree through
+~document->sexp~, with a table of its own for a replaced command, a text
+command, and one that runs itself until the depth limit stops it. ~html~
+compares HTML as text, hooks and a whole page included.
+
+** Not yet
+
+- A table of contents, and references between sections: the headings and
+  their ids are all there, but nothing resolves a reference to one yet.
+- ~@include~, and code read from a file.
+- A second converter — plain text, or LaTeX.
+- An ~@~ inside ~[...]~, for a command as an argument.

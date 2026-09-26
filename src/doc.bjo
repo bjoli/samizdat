@@ -1,0 +1,207 @@
+;; This Source Code Form is subject to the terms of the Mozilla Public
+;; License, v. 2.0. If a copy of the MPL was not distributed with this
+;; file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+;; samizdat/src/doc.bjo — the module (samizdat doc).
+;;
+;; What a document is once its commands have run, and before anything has
+;; been decided about how it looks. The commands make these; a converter —
+;; `(samizdat html)`, or one of your own — prints them. Neither side knows the
+;; other: a command does not know it is headed for HTML, and a converter does
+;; not know which command made a paragraph.
+;;
+;; Two cases are for what the rest does not cover. `Span` and `Div` carry a
+;; class — "aside", "warning", "kbd" — which a converter may know something
+;; about, and otherwise treats as a plain container. `RawInline` and
+;; `RawBlock` carry text for one format only, which the converter for that
+;; format passes through and every other one leaves out.
+
+(export
+  Inline Block Document
+  ;; Reading the (meta ...) form.
+  meta-values meta-string meta-strings
+  ;; The text of some inlines, markup aside: for an id, an alt, a title.
+  inlines->text
+  ;; A converter to s-expressions, for tests and for looking.
+  document->sexp blocks->sexp inlines->sexp)
+
+(import (std prelude))
+(import (text bjodat-core))
+
+;; ---------------------------------------------------------------------------
+;; The tree
+;; ---------------------------------------------------------------------------
+
+(type-rec
+  (: Inline (Union (Str string)
+                   (Emph (Vec Inline))
+                   (Strong (Vec Inline))
+                   ;; Code, as it is written.
+                   (Code string)
+                   ;; Where it goes, and what it says.
+                   (Link string (Vec Inline))
+                   ;; Where the image is, and a description of it.
+                   (Image string string)
+                   LineBreak
+                   ;; The number of a footnote, which is in the document's
+                   ;; `notes`, counting from 1.
+                   (NoteRef int)
+                   (Span string (Vec Inline))
+                   ;; A format — "html" — and text in it.
+                   (RawInline string string)))
+  (: Block (Union (Para (Vec Inline))
+                  ;; A level, 1 for a section and more for the ones inside it;
+                  ;; an id to link to, unique in the document; and the title.
+                  (Heading int string (Vec Inline))
+                  ;; The language it is in, "" if nobody said, and the code.
+                  (CodeBlock string string)
+                  (Quote (Vec Block))
+                  ;; Whether it is numbered, and its items.
+                  (ItemList bool (Vec (Vec Block)))
+                  Rule
+                  (Div string (Vec Block))
+                  (RawBlock string string))))
+
+;; `meta` is the (meta ...) form as bjodat read it; see `meta-values`, or read
+;; it into a record of your own with `def/bjodat-type` and `#:tag meta`.
+;; `notes` are the footnotes, in the order they are numbered.
+(type (: Document (Record (: meta (Option Bjodat))
+                          (: blocks (Vec Block))
+                          (: notes (Vec (Vec Block))))))
+
+;; ---------------------------------------------------------------------------
+;; Meta
+;; ---------------------------------------------------------------------------
+;; `(meta (title "Cookies") (tags web http))`: each clause a name and values.
+
+;; The values of the first clause called `name`.
+(: meta-values (-> Document string (Option (List Bjodat))))
+(defun (meta-values doc name)
+  (match (record-ref doc meta)
+    ((Some (BjoList (Cons head clauses))) (clause-named clauses name))
+    (_ None)))
+
+(: clause-named (-> (List Bjodat) string (Option (List Bjodat))))
+(defun (clause-named clauses name)
+  (match clauses
+    (Nil None)
+    ((Cons (BjoList (Cons (BjoSym s) values)) rest)
+     (if (= (symbol->string s) name) (Some values) (clause-named rest name)))
+    ((Cons other rest) (clause-named rest name))))
+
+;; A string or a symbol as text, and nothing else.
+(: textual (-> Bjodat (Option string)))
+(defun (textual v)
+  (match v
+    ((BjoStr s) (Some s))
+    ((BjoSym s) (Some (symbol->string s)))
+    (_ None)))
+
+;; The clause's value, when it has one and it is a string or a symbol:
+;; `(title "Cookies")`.
+(: meta-string (-> Document string (Option string)))
+(defun (meta-string doc name)
+  (match (meta-values doc name)
+    ((Some (Cons v Nil)) (textual v))
+    (_ None)))
+
+;; The clause's values that are strings or symbols: `(tags web http)`.
+(: meta-strings (-> Document string (Vec string)))
+(defun (meta-strings doc name)
+  (match (meta-values doc name)
+    ((Some values)
+     (loop (:for v values)
+           (:acc out (folding (vec-empty)
+                              (match (textual v)
+                                ((Some s) (vec-add out s))
+                                (None out))))))
+    (None (vec-empty))))
+
+;; ---------------------------------------------------------------------------
+;; Text
+;; ---------------------------------------------------------------------------
+
+(: inlines->text (-> (Vec Inline) string))
+(defun (inlines->text inlines)
+  (string-join (vec-map inline->text inlines) ""))
+
+(: inline->text (-> Inline string))
+(defun (inline->text i)
+  (match i
+    ((Str s) s)
+    ((Emph xs) (inlines->text xs))
+    ((Strong xs) (inlines->text xs))
+    ((Code s) s)
+    ((Link url xs) (inlines->text xs))
+    ((Image src alt) alt)
+    (LineBreak " ")
+    ((NoteRef n) "")
+    ((Span c xs) (inlines->text xs))
+    ((RawInline f s) "")))
+
+;; ---------------------------------------------------------------------------
+;; S-expressions
+;; ---------------------------------------------------------------------------
+;; A converter like any other, which prints the tree rather than a format:
+;;
+;;     (para "See " (em "this") ".")
+;;     (heading 1 "the-defaults" "The defaults")
+
+(: quoted (-> string string))
+(defun (quoted s) (bjodat->string (BjoStr s)))
+
+(: form (-> string (Vec string) string))
+(defun (form head parts)
+  (if (vec-empty? parts)
+      (str "(" head ")")
+      (str "(" head " " (string-join parts " ") ")")))
+
+(: inlines->sexp (-> (Vec Inline) string))
+(defun (inlines->sexp inlines)
+  (string-join (vec-map inline->sexp inlines) " "))
+
+(: inline->sexp (-> Inline string))
+(defun (inline->sexp i)
+  (match i
+    ((Str s) (quoted s))
+    ((Emph xs) (form "em" (vec-map inline->sexp xs)))
+    ((Strong xs) (form "strong" (vec-map inline->sexp xs)))
+    ((Code s) (form "code" [(quoted s)]))
+    ((Link url xs) (form "link" (vec-merge [(quoted url)] (vec-map inline->sexp xs))))
+    ((Image src alt) (form "image" [(quoted src) (quoted alt)]))
+    (LineBreak "(br)")
+    ((NoteRef n) (form "note-ref" [(int->string n)]))
+    ((Span c xs) (form "span" (vec-merge [(quoted c)] (vec-map inline->sexp xs))))
+    ((RawInline f s) (form "raw" [(quoted f) (quoted s)]))))
+
+(: blocks->sexp (-> (Vec Block) string))
+(defun (blocks->sexp blocks)
+  (string-join (vec-map block->sexp blocks) " "))
+
+(: block->sexp (-> Block string))
+(defun (block->sexp b)
+  (match b
+    ((Para xs) (form "para" (vec-map inline->sexp xs)))
+    ((Heading level id xs)
+     (form "heading" (vec-merge [(int->string level) (quoted id)] (vec-map inline->sexp xs))))
+    ((CodeBlock lang text) (form "codeblock" [(quoted lang) (quoted text)]))
+    ((Quote bs) (form "quote" (vec-map block->sexp bs)))
+    ((ItemList numbered items)
+     (form (if numbered "numbered" "bullets")
+           (vec-map (fun (item) (form "item" (vec-map block->sexp item))) items)))
+    (Rule "(rule)")
+    ((Div c bs) (form "div" (vec-merge [(quoted c)] (vec-map block->sexp bs))))
+    ((RawBlock f s) (form "raw-block" [(quoted f) (quoted s)]))))
+
+;; One block to a line, and the notes after them.
+(: document->sexp (-> Document string))
+(defun (document->sexp doc)
+  (def notes (record-ref doc notes))
+  (def body (string-join (vec-map block->sexp (record-ref doc blocks)) "\n"))
+  (if (vec-empty? notes)
+      body
+      (str body "\n"
+           (form "notes"
+                 (loop (:for i (range 0 (vec-length notes)))
+                       (:acc out (vecing (form "note" (vec-merge [(int->string (+ i 1))]
+                                                                 (vec-map block->sexp (vec-ref notes i)))))))))))

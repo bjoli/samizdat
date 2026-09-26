@@ -1,0 +1,5 @@
+(lock
+  (locked
+    (package (name (bjorsec)) (version "0.1.0")
+             (source (git (url "https://github.com/bjoli/bjorsec")))
+             (commit "b30b181f503ea9fa69321d0ff80e8572b4d25d81"))))

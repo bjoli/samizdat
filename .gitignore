@@ -1,0 +1,9 @@
+.bjo/
+*.dll
+*.exe
+*.pdb
+*.bjobuild
+*.runtimeconfig.json
+*.deps.json
+# What examples/render.bjo writes.
+examples/*.html

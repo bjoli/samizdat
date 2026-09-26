@@ -1,0 +1,229 @@
+;; This Source Code Form is subject to the terms of the Mozilla Public
+;; License, v. 2.0. If a copy of the MPL was not distributed with this
+;; file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+;; samizdat/src/html.bjo — the module (samizdat html).
+;;
+;; A converter: a `Document` as HTML. It is one converter among the ones you
+;; might write, and has no say in anything before it — a command does not
+;; know this module exists.
+;;
+;;     (document->html doc)            the body of a page: blocks, then notes
+;;     (html-page doc #:title "...")   a whole page around it
+;;
+;; What it writes, and what to style:
+;;
+;;     a section heading     <h2 id="...">, one level below the page's <h1>;
+;;                           #:heading-offset 0 makes it <h1>
+;;     a code block          <pre><code class="language-scheme">, the class
+;;                           highlight.js and Prism look for
+;;     a span, a div         <span class="kbd">, <div class="aside">
+;;     a footnote            <sup class="note-ref"><a href="#note-1">1</a></sup>,
+;;                           and <section class="notes"> at the end
+;;     raw text              passed through when its format is "html", and
+;;                           left out when it is anything else
+;;
+;; A hook takes over one kind of block or inline. It is asked first, and
+;; answers `None` for what it leaves to the converter:
+;;
+;;     (html-options #:block-hook
+;;       (fun (h b)
+;;         (match b
+;;           ((Div "aside" bs) (Some (str "<aside>" (blocks->html h bs) "</aside>")))
+;;           (_ None))))
+;;
+;; `#:id-prefix` goes in front of every id this writes, so that two documents
+;; on one page — a blog's front page — do not share a `note-1`.
+
+(export
+  Html html-options default-html
+  document->html html-page
+  blocks->html inlines->html
+  escape-html escape-attribute)
+
+(import (std prelude))
+(import (samizdat doc))
+
+;; ---------------------------------------------------------------------------
+;; Options
+;; ---------------------------------------------------------------------------
+
+(type-rec
+  (: Html #:opaque (Record (: offset int)
+                           (: prefix string)
+                           (: block-hook (-> Html Block (Option string)))
+                           (: inline-hook (-> Html Inline (Option string))))))
+
+(: no-block-hook (-> Html Block (Option string)))
+(defun (no-block-hook h b) None)
+
+(: no-inline-hook (-> Html Inline (Option string)))
+(defun (no-inline-hook h i) None)
+
+(: html-options (-> (#:heading-offset int) (#:id-prefix string)
+                    (#:block-hook (-> Html Block (Option string)))
+                    (#:inline-hook (-> Html Inline (Option string)))
+                    Html))
+(defun (html-options #:heading-offset 1 #:id-prefix ""
+                     #:block-hook no-block-hook #:inline-hook no-inline-hook)
+  (Html (offset heading-offset) (prefix id-prefix) (block-hook block-hook) (inline-hook inline-hook)))
+
+(: default-html Html)
+(def default-html (html-options))
+
+;; ---------------------------------------------------------------------------
+;; Escaping
+;; ---------------------------------------------------------------------------
+
+;; `&` first, or the ampersands the others put in are escaped a second time.
+(: escape-html (-> string string))
+(defun (escape-html s)
+  (string-replace (string-replace (string-replace s "&" "&amp;") "<" "&lt;") ">" "&gt;"))
+
+(: escape-attribute (-> string string))
+(defun (escape-attribute s)
+  (string-replace (escape-html s) "\"" "&quot;"))
+
+(: id (-> Html string string))
+(defun (id h s) (escape-attribute (str (record-ref h prefix) s)))
+
+;; ---------------------------------------------------------------------------
+;; Inlines
+;; ---------------------------------------------------------------------------
+
+(: inlines->html (-> Html (Vec Inline) string))
+(defun (inlines->html h xs)
+  (string-join (vec-map (fun (x) (inline->html h x)) xs) ""))
+
+(: inline->html (-> Html Inline string))
+(defun (inline->html h x)
+  (match ((record-ref h inline-hook) h x)
+    ((Some s) s)
+    (None (plain-inline h x))))
+
+(: plain-inline (-> Html Inline string))
+(defun (plain-inline h x)
+  (match x
+    ((Str s) (escape-html s))
+    ((Emph xs) (str "<em>" (inlines->html h xs) "</em>"))
+    ((Strong xs) (str "<strong>" (inlines->html h xs) "</strong>"))
+    ((Code s) (str "<code>" (escape-html s) "</code>"))
+    ((Link url xs) (str "<a href=\"" (escape-attribute url) "\">" (inlines->html h xs) "</a>"))
+    ((Image src alt) (str "<img src=\"" (escape-attribute src) "\" alt=\"" (escape-attribute alt) "\">"))
+    (LineBreak "<br>")
+    ((NoteRef n)
+     (def k (int->string n))
+     (str "<sup class=\"note-ref\"><a id=\"" (id h (str "note-ref-" k)) "\" href=\"#"
+          (id h (str "note-" k)) "\">" k "</a></sup>"))
+    ((Span c xs) (str "<span class=\"" (escape-attribute c) "\">" (inlines->html h xs) "</span>"))
+    ((RawInline format s) (if (= format "html") s ""))))
+
+;; ---------------------------------------------------------------------------
+;; Blocks
+;; ---------------------------------------------------------------------------
+
+(: blocks->html (-> Html (Vec Block) string))
+(defun (blocks->html h bs)
+  (string-join (vec-filter (fun (s) (not (string-empty? s)))
+                           (vec-map (fun (b) (block->html h b)) bs))
+               "\n"))
+
+(: block->html (-> Html Block string))
+(defun (block->html h b)
+  (match ((record-ref h block-hook) h b)
+    ((Some s) s)
+    (None (plain-block h b))))
+
+(: heading-tag (-> Html int string))
+(defun (heading-tag h level)
+  (def n (+ level (record-ref h offset)))
+  (str "h" (int->string (cond ((< n 1) 1) ((> n 6) 6) (else n)))))
+
+;; An item that is one paragraph is written without the `<p>`, as a list of
+;; short items is written by hand.
+(: item->html (-> Html (Vec Block) string))
+(defun (item->html h item)
+  (if (= (vec-length item) 1)
+      (match (vec-ref item 0)
+        ((Para xs) (str "<li>" (inlines->html h xs) "</li>"))
+        (other (str "<li>" (blocks->html h item) "</li>")))
+      (str "<li>\n" (blocks->html h item) "\n</li>")))
+
+(: plain-block (-> Html Block string))
+(defun (plain-block h b)
+  (match b
+    ((Para xs) (str "<p>" (inlines->html h xs) "</p>"))
+    ((Heading level hid xs)
+     (def tag (heading-tag h level))
+     (str "<" tag " id=\"" (id h hid) "\">" (inlines->html h xs) "</" tag ">"))
+    ((CodeBlock lang text)
+     (str "<pre><code"
+          (if (string-empty? lang) "" (str " class=\"language-" (escape-attribute lang) "\""))
+          ">" (escape-html text) "</code></pre>"))
+    ((Quote bs) (str "<blockquote>\n" (blocks->html h bs) "\n</blockquote>"))
+    ((ItemList numbered items)
+     (def tag (if numbered "ol" "ul"))
+     (str "<" tag ">\n"
+          (string-join (vec-map (fun (item) (item->html h item)) items) "\n")
+          "\n</" tag ">"))
+    (Rule "<hr>")
+    ((Div c bs) (str "<div class=\"" (escape-attribute c) "\">\n" (blocks->html h bs) "\n</div>"))
+    ((RawBlock format s) (if (= format "html") s ""))))
+
+;; ---------------------------------------------------------------------------
+;; Notes, and a document
+;; ---------------------------------------------------------------------------
+
+;; A note's blocks, with the link back to where it was referred to at the end
+;; of its last paragraph, or after its last block when that is not one.
+(: note->html (-> Html int (Vec Block) string))
+(defun (note->html h n blocks)
+  (def k (int->string n))
+  (def back (str "<a class=\"note-back\" href=\"#" (id h (str "note-ref-" k)) "\">↩</a>"))
+  (def count (vec-length blocks))
+  (def body
+    (if (= count 0)
+        back
+        (match (vec-ref blocks (- count 1))
+          ((Para xs)
+           (def before (blocks->html h (vec-remove-at blocks (- count 1))))
+           (def last (str "<p>" (inlines->html h xs) " " back "</p>"))
+           (if (string-empty? before) last (str before "\n" last)))
+          (other (str (blocks->html h blocks) "\n" back)))))
+  (str "<li id=\"" (id h (str "note-" k)) "\">\n" body "\n</li>"))
+
+(: notes->html (-> Html (Vec (Vec Block)) string))
+(defun (notes->html h notes)
+  (str "<section class=\"notes\">\n<ol>\n"
+       (string-join (loop (:for i (range 0 (vec-length notes)))
+                          (:acc out (vecing (note->html h (+ i 1) (vec-ref notes i)))))
+                    "\n")
+       "\n</ol>\n</section>"))
+
+;; The blocks, then the notes if there are any: what goes in a page's <body>,
+;; or an <article> in one.
+(: document->html (-> Document (#:with Html) string))
+(defun (document->html doc #:with default-html)
+  (def body (blocks->html with (record-ref doc blocks)))
+  (def notes (record-ref doc notes))
+  (if (vec-empty? notes)
+      body
+      (str body "\n" (notes->html with notes))))
+
+;; A whole page. The title is `#:title`, or the meta form's `(title ...)`;
+;; `#:head` is put in the <head> as it is — a stylesheet, say.
+(: html-page (-> Document (#:with Html) (#:title string) (#:head string) (#:lang string) string))
+(defun (html-page doc #:with default-html #:title "" #:head "" #:lang "en")
+  (def title-text (if (string-empty? title) (option-ref-or (meta-string doc "title") "") title))
+  (str "<!DOCTYPE html>\n"
+       "<html lang=\"" (escape-attribute lang) "\">\n"
+       "<head>\n"
+       "<meta charset=\"utf-8\">\n"
+       "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+       "<title>" (escape-html title-text) "</title>\n"
+       (if (string-empty? head) "" (str head "\n"))
+       "</head>\n"
+       "<body>\n"
+       (document->html doc #:with with) "\n"
+       "</body>\n"
+       "</html>\n"))

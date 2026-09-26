@@ -1,0 +1,212 @@
+;; This Source Code Form is subject to the terms of the Mozilla Public
+;; License, v. 2.0. If a copy of the MPL was not distributed with this
+;; file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+;; samizdat/src/commands.bjo — the module (samizdat commands).
+;;
+;; The commands a document can use out of the box. They make the tree in
+;; `(samizdat doc)` and know nothing of any output format.
+;;
+;; Text
+;;     @em{...}  @strong{...}          emphasis, and strong emphasis
+;;     @code{...}                      code, as written
+;;     @link["url"]{...}  @link["url"] a link; with no body the url is its text
+;;     @image["src" #:alt "..."]       an image
+;;     @br                             a line break
+;;     @span["class"]{...}             text with a class, for a converter to style
+;;     @raw["html"]{...}               text for one format only
+;;     @note{...}                      a footnote, which may hold paragraphs
+;;
+;; Blocks
+;;     @section{...}                   a heading, with #:id to choose its id;
+;;     @subsection{...}                the next level down,
+;;     @subsubsection{...}             and the one below that
+;;     @codeblock[#:lang "x"]|{...}|   a block of code
+;;     @blockquote{...}                a quotation, which may hold paragraphs
+;;     @itemlist{@item{...} ...}       a list; #:style ordered numbers it
+;;     @hr                             a rule
+;;     @div["class"]{...}              blocks with a class
+;;     @raw-block["html"]{...}         a block for one format only
+;;
+;; And @comment{...}, which is nothing, as @;{...} is.
+;;
+;; To add your own, or replace one of these, merge a table over this one —
+;; `(map-merge standard-commands mine)` — and yours win.
+
+(export standard-commands)
+
+(import (std prelude))
+(import (samizdat read))
+(import (samizdat doc))
+(import (samizdat expand))
+
+;; ---------------------------------------------------------------------------
+;; Checking a call
+;; ---------------------------------------------------------------------------
+
+(: no-arguments! (-> Ctx Call void))
+(defun (no-arguments! cx c)
+  (check-keywords! cx c (vec-empty))
+  (when (> (arg-count c) 0) (refuse cx c "takes no arguments")))
+
+(: no-body! (-> Ctx Call void))
+(defun (no-body! cx c)
+  (when (has-body? c) (refuse cx c "takes no body")))
+
+(: needs-body! (-> Ctx Call void))
+(defun (needs-body! cx c)
+  (unless (has-body? c) (refuse cx c "needs a body: {...}")))
+
+;; ---------------------------------------------------------------------------
+;; Text
+;; ---------------------------------------------------------------------------
+
+(: em (-> Ctx Call (Vec Piece)))
+(defun (em cx c)
+  (no-arguments! cx c)
+  (needs-body! cx c)
+  (inline (Emph (expand-inlines cx c))))
+
+(: strong (-> Ctx Call (Vec Piece)))
+(defun (strong cx c)
+  (no-arguments! cx c)
+  (needs-body! cx c)
+  (inline (Strong (expand-inlines cx c))))
+
+(: code (-> Ctx Call (Vec Piece)))
+(defun (code cx c)
+  (no-arguments! cx c)
+  (needs-body! cx c)
+  (inline (Code (body-text cx c))))
+
+(: link (-> Ctx Call (Vec Piece)))
+(defun (link cx c)
+  (check-keywords! cx c (vec-empty))
+  (def url (arg-string cx c 0))
+  (inline (Link url (if (has-body? c) (expand-inlines cx c) (vec-add (vec-empty) (Str url))))))
+
+(: image (-> Ctx Call (Vec Piece)))
+(defun (image cx c)
+  (check-keywords! cx c ["alt"])
+  (no-body! cx c)
+  (inline (Image (arg-string cx c 0) (kw-string-or cx c "alt" ""))))
+
+(: br (-> Ctx Call (Vec Piece)))
+(defun (br cx c)
+  (no-arguments! cx c)
+  (no-body! cx c)
+  (inline LineBreak))
+
+(: span (-> Ctx Call (Vec Piece)))
+(defun (span cx c)
+  (check-keywords! cx c (vec-empty))
+  (inline (Span (arg-string cx c 0) (expand-inlines cx c))))
+
+(: raw (-> Ctx Call (Vec Piece)))
+(defun (raw cx c)
+  (check-keywords! cx c (vec-empty))
+  (inline (RawInline (arg-string cx c 0) (body-text cx c))))
+
+(: note (-> Ctx Call (Vec Piece)))
+(defun (note cx c)
+  (no-arguments! cx c)
+  (needs-body! cx c)
+  (inline (NoteRef (add-note! cx (fun () (expand-blocks cx c))))))
+
+;; ---------------------------------------------------------------------------
+;; Blocks
+;; ---------------------------------------------------------------------------
+
+(: heading (-> int Command))
+(defun (heading level)
+  (fun (cx c)
+    (check-keywords! cx c ["id"])
+    (needs-body! cx c)
+    (def title (expand-inlines cx c))
+    (def id (kw-string-or cx c "id" ""))
+    (block (Heading level
+                    (unique-id! cx (if (string-empty? id) (inlines->text title) id))
+                    title))))
+
+(: codeblock (-> Ctx Call (Vec Piece)))
+(defun (codeblock cx c)
+  (check-keywords! cx c ["lang"])
+  (when (> (arg-count c) 0) (refuse cx c "takes no arguments; the language is #:lang"))
+  (block (CodeBlock (kw-string-or cx c "lang" "") (body-text cx c))))
+
+(: blockquote (-> Ctx Call (Vec Piece)))
+(defun (blockquote cx c)
+  (no-arguments! cx c)
+  (block (Quote (expand-blocks cx c))))
+
+;; The items are read off the body, which holds nothing else but space.
+(: itemlist (-> Ctx Call (Vec Piece)))
+(defun (itemlist cx c)
+  (check-keywords! cx c ["style"])
+  (def style (kw-symbol-or cx c "style" "bullets"))
+  (unless (or (= style "bullets") (= style "ordered"))
+    (refuse cx c (str "#:style is bullets or ordered, not " style)))
+  (def items
+    (loop (:for item (body-items c))
+          (:acc out (folding (vec-empty)
+                             (match item
+                               ((Text s)
+                                (unless (string-empty? (string-trim s))
+                                  (refuse cx c "holds only @item{...}, and there is text in it"))
+                                out)
+                               ((Cmd inner)
+                                (unless (= (record-ref inner name) "item")
+                                  (refuse cx inner "cannot stand in an @itemlist, where only @item{...} can"))
+                                (check-keywords! cx inner (vec-empty))
+                                (vec-add out (expand-blocks cx inner))))))))
+  (block (ItemList (= style "ordered") items)))
+
+;; An @item is read by the @itemlist it is in, and anywhere else is a mistake.
+(: item (-> Ctx Call (Vec Piece)))
+(defun (item cx c) (refuse cx c "belongs inside an @itemlist"))
+
+(: hr (-> Ctx Call (Vec Piece)))
+(defun (hr cx c)
+  (no-arguments! cx c)
+  (no-body! cx c)
+  (block Rule))
+
+(: div (-> Ctx Call (Vec Piece)))
+(defun (div cx c)
+  (check-keywords! cx c (vec-empty))
+  (block (Div (arg-string cx c 0) (expand-blocks cx c))))
+
+(: raw-block (-> Ctx Call (Vec Piece)))
+(defun (raw-block cx c)
+  (check-keywords! cx c (vec-empty))
+  (block (RawBlock (arg-string cx c 0) (body-text cx c))))
+
+(: comment (-> Ctx Call (Vec Piece)))
+(defun (comment cx c) nothing)
+
+;; ---------------------------------------------------------------------------
+;; The table
+;; ---------------------------------------------------------------------------
+
+(: standard-commands (Map string Command))
+(def standard-commands
+  #map(("em" em)
+       ("strong" strong)
+       ("code" code)
+       ("link" link)
+       ("image" image)
+       ("br" br)
+       ("span" span)
+       ("raw" raw)
+       ("note" note)
+       ("section" (heading 1))
+       ("subsection" (heading 2))
+       ("subsubsection" (heading 3))
+       ("codeblock" codeblock)
+       ("blockquote" blockquote)
+       ("itemlist" itemlist)
+       ("item" item)
+       ("hr" hr)
+       ("div" div)
+       ("raw-block" raw-block)
+       ("comment" comment)))

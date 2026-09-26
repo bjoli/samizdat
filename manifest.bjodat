@@ -1,0 +1,17 @@
+(package
+  (name (samizdat))
+  (version "0.1.0")
+  (description "A markup for writing, after Racket's Scribble: @name[args]{text}, read into a tree any converter can print.")
+  (license "MPL-2.0")
+
+  ;; The reader is written with bjorsec's combinators. To work on both at once,
+  ;; give (bjorsec) a path source in your own manifest: the root manifest's
+  ;; source wins.
+  (depends
+    (package (name (bjorsec))
+             (version (version-at-least "0.1.0"))
+             (source (git (url "https://github.com/bjoli/bjorsec")))))
+
+  ;; A library: there is no src/main.bjo, so `bjo build` builds every module
+  ;; under src/ rather than a program.
+  )
