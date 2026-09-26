@@ -21,7 +21,8 @@
 (defun (doc-of text)
   (match (read-document text standard-commands #:typography #f)
     ((Ok d) d)
-    ((Err e) (Document (meta None) (blocks [(Para [(Str (str "error: " e))])]) (notes (vec-empty))))))
+    ((Err e) (Document (meta None) (blocks [(Para [(Str (str "error: " e))])]) (notes (vec-empty))
+                       (sources (vec-empty))))))
 
 (: html-with (-> Html string string))
 (defun (html-with h text) (document->html (doc-of text) #:with h))

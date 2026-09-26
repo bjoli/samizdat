@@ -46,6 +46,13 @@
     ((Ok d) (document->sexp d))
     ((Err e) (str "error: " e))))
 
+;; The files a document was made from.
+(: sources-of (-> (Result string Document) string))
+(defun (sources-of result)
+  (match result
+    ((Ok d) (string-join (record-ref d sources) " "))
+    ((Err e) (str "error: " e))))
+
 ;; --- commands of the test's own -------------------------------------------
 
 ;; `@em` replaced: louder.
@@ -260,6 +267,17 @@
   (expect-true "and so does one that cannot be read"
                (string-starts-with? (refusal "@include[\"tests/fixtures/unclosed.sz\"]")
                                     "post.sz:1:1: @include: tests/fixtures/unclosed.sz: Parse error at line 2"))
+  (expect "a document knows the files it was made from: its own, then what it included"
+          (sources-of (read-document-file "tests/fixtures/main.sz" standard-commands))
+          "tests/fixtures/main.sz tests/fixtures/chapter.sz")
+  (expect "however deep, each as the path it was read by"
+          (sources-of (read-document-file "tests/fixtures/nested.sz" standard-commands))
+          "tests/fixtures/nested.sz tests/fixtures/sub/inner.sz tests/fixtures/sub/../leaf.sz")
+  (expect "code read from a file is a source, once however often it is read"
+          (sources-of (read-document (str "@codeblock[#:file \"tests/fixtures/snippet.scm\"]\n"
+                                          "@codeblock[#:file \"tests/fixtures/snippet.scm\"]")
+                                     standard-commands))
+          "tests/fixtures/snippet.scm")
   (expect "code from a file"
           (tree "@codeblock[#:lang \"scheme\" #:file \"tests/fixtures/snippet.scm\"]")
           "(codeblock \"scheme\" \"(define (f x)\\n  x)\")")

@@ -84,10 +84,15 @@
 
 ;; `meta` is the (meta ...) form as bjodat read it; see `meta-values`, or read
 ;; it into a record of your own with `def/bjodat-type` and `#:tag meta`.
-;; `notes` are the footnotes, in the order they are numbered.
+;; `notes` are the footnotes, in the order they are numbered. `sources` are
+;; the files it was made from, in the order they were read: the document's
+;; own, when it was read from a file, and every file a command read for it —
+;; an @include, an @include-markdown, the code of a @codeblock. A program that
+;; keeps what it made can tell from them when to make it again.
 (type (: Document (Record (: meta (Option Bjodat))
                           (: blocks (Vec Block))
-                          (: notes (Vec (Vec Block))))))
+                          (: notes (Vec (Vec Block)))
+                          (: sources (Vec string)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Meta
