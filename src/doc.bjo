@@ -192,11 +192,11 @@
     ((Emph xs) (form "em" (vec-map inline->sexp xs)))
     ((Strong xs) (form "strong" (vec-map inline->sexp xs)))
     ((Code s) (form "code" [(quoted s)]))
-    ((Link url xs) (form "link" (vec-merge [(quoted url)] (vec-map inline->sexp xs))))
+    ((Link url xs) (form "link" (vec-insert (vec-map inline->sexp xs) 0 (quoted url))))
     ((Image src alt) (form "image" [(quoted src) (quoted alt)]))
     (LineBreak "(br)")
     ((NoteRef n) (form "note-ref" [(int->string n)]))
-    ((Span c xs) (form "span" (vec-merge [(quoted c)] (vec-map inline->sexp xs))))
+    ((Span c xs) (form "span" (vec-insert (vec-map inline->sexp xs) 0 (quoted c))))
     ((RawInline f s) (form "raw" [(quoted f) (quoted s)]))))
 
 (: blocks->sexp (-> (Vec Block) string))
@@ -215,7 +215,7 @@
      (form (if numbered "numbered" "bullets")
            (vec-map (fun (item) (form "item" (vec-map block->sexp item))) items)))
     (Rule "(rule)")
-    ((Div c bs) (form "div" (vec-merge [(quoted c)] (vec-map block->sexp bs))))
+    ((Div c bs) (form "div" (vec-insert (vec-map block->sexp bs) 0 (quoted c))))
     ((RawBlock f s) (form "raw-block" [(quoted f) (quoted s)]))))
 
 ;; One block to a line, and the notes after them.
@@ -226,10 +226,12 @@
     (def body (string-join (vec-map block->sexp (record-ref doc blocks)) "\n"))
     (when (empty? notes)
       (ret body))
-    (str body "\n"
-         (form "notes"
-               ;; What even is this?
-               (loop (:for i (up-from 1))
-                     (:for inv notes)
-                     (:acc (vecing (form "note" (vec-merge [(int->string i)]
-                                                           (vec-map block->sexp inv))))))))))
+    (def all-notes
+       (loop (:for i (up-from 1))
+             (:for inv notes)
+             (:let noteblocks (vec-map block->sexp inv))
+             (:let prepended (vec-insert noteblocks 0 (int->string i)))
+             (:acc (vecing (form "note" prepended)))))
+
+    (str body "\n" (form "notes" all-notes))))
+               
