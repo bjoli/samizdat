@@ -48,39 +48,39 @@
                    (: aligns (Vec Align))
                    (: head (Vec (Vec (Vec Inline))))
                    (: bodies (Vec (Vec (Vec (Vec Inline)))))))
-  (: Inline (Union (Str string)
-                   (Emph (Vec Inline))
-                   (Strong (Vec Inline))
+  (: Inline (Union (: Str string)
+                   (: Emph (Vec Inline))
+                   (: Strong (Vec Inline))
                    ;; Struck through: ~~this~~ in Markdown, +this+ in Org.
-                   (Strike (Vec Inline))
+                   (: Strike (Vec Inline))
                    ;; A box, ticked or not: a task list item's [ ] or [x].
-                   (Checkbox bool)
+                   (: Checkbox bool)
                    ;; Code, as it is written.
-                   (Code string)
+                   (: Code string)
                    ;; Where it goes, and what it says.
-                   (Link string (Vec Inline))
+                   (: Link string (Vec Inline))
                    ;; Where the image is, and a description of it.
-                   (Image string string)
+                   (: Image string string)
                    LineBreak
                    ;; The number of a footnote, which is in the document's
                    ;; `notes`, counting from 1.
-                   (NoteRef int)
-                   (Span string (Vec Inline))
+                   (: NoteRef int)
+                   (: Span string (Vec Inline))
                    ;; A format — "html" — and text in it.
-                   (RawInline string string)))
-  (: Block (Union (Para (Vec Inline))
+                   (: RawInline string string)))
+  (: Block (Union (: Para (Vec Inline))
                   ;; A level, 1 for a section and more for the ones inside it;
                   ;; an id to link to, unique in the document; and the title.
-                  (Heading int string (Vec Inline))
+                  (: Heading int string (Vec Inline))
                   ;; The language it is in, "" if nobody said, and the code.
-                  (CodeBlock string string)
-                  (Quote (Vec Block))
+                  (: CodeBlock string string)
+                  (: Quote (Vec Block))
                   ;; Whether it is numbered, and its items.
-                  (ItemList bool (Vec (Vec Block)))
+                  (: ItemList bool (Vec (Vec Block)))
                   Rule
-                  (Div string (Vec Block))
-                  (RawBlock string string)
-                  (TableBlock Table))))
+                  (: Div string (Vec Block))
+                  (: RawBlock string string)
+                  (: TableBlock Table))))
 
 ;; `meta` is the (meta ...) form as bjodat read it; see `meta-values`, or read
 ;; it into a record of your own with `def/bjodat-type` and `#:tag meta`.

@@ -42,8 +42,8 @@
 ;; indented, whether it numbers, and what follows the marker; or text, with
 ;; its indentation taken off.
 (type (: Line (Union Blank
-                     (Bullet int bool (Vec At))
-                     (Plain int (Vec At)))))
+                     (: Bullet int bool (Vec At))
+                     (: Plain int (Vec At)))))
 
 (: digits-from (-> string int int))
 (defun (digits-from s i)
@@ -123,8 +123,8 @@
 ;; ---------------------------------------------------------------------------
 
 ;; What an item holds, in order: its text, and the lists inside it.
-(type (: Part (Union (Words (Vec At))
-                     (Sublist bool (Vec (Vec Part))))))
+(type (: Part (Union (: Words (Vec At))
+                     (: Sublist bool (Vec (Vec Part))))))
 
 ;; Text added to an item: after the words it ends with, with `joint` between —
 ;; a newline, or a blank line for a new paragraph — or, after a list inside
@@ -250,11 +250,11 @@
 ;; lines — `#+NAME:`, `#+TBLFM:` — are passed over.
 
 (type (: TableLine (Union Skipped
-                          (CaptionLine (Vec At))
-                          (RuleLine (Vec Align))
-                          (CookieLine (Vec Align))
-                          (RowLine (Vec (Vec At)))
-                          (StrayLine (Vec At)))))
+                          (: CaptionLine (Vec At))
+                          (: RuleLine (Vec Align))
+                          (: CookieLine (Vec Align))
+                          (: RowLine (Vec (Vec At)))
+                          (: StrayLine (Vec At)))))
 
 ;; The line's text, when it is nothing but text.
 (: plain-line (-> (Vec At) (Option string)))

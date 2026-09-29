@@ -64,12 +64,12 @@
 ;; Commands, and what they run in
 ;; ---------------------------------------------------------------------------
 
-(type (: Piece (Union (PInline Inline)
-                      (PBlock Block))))
+(type (: Piece (Union (: PInline Inline)
+                      (: PBlock Block))))
 
 ;; What a deferred command makes of the finished document.
-(type (: Later (Union (LaterBlocks (-> Document (Vec Block)))
-                      (LaterInlines (-> Document (Vec Inline))))))
+(type (: Later (Union (: LaterBlocks (-> Document (Vec Block)))
+                      (: LaterInlines (-> Document (Vec Inline))))))
 
 ;; `commands` is the table the document is expanded with. `source` is what a
 ;; message calls the file being expanded — the document, or one it includes —

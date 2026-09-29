@@ -53,8 +53,8 @@
 ;; command written with braces, empty ones included. `line` and `column` are
 ;; where its @ is, for a message about it.
 (type-rec
-  (: At (Union (Text string)
-               (Cmd Call)))
+  (: At (Union (: Text string)
+               (: Cmd Call)))
   (: Call (Record (: name string)
                   (: args (Vec Bjodat))
                   (: body (Option (Vec At)))

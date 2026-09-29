@@ -403,16 +403,16 @@ A refusal from such a function names the file its command was written in.
 
 #+BEGIN_SRC scheme
 (type-rec
-  (: Inline (Union (Str string) (Emph (Vec Inline)) (Strong (Vec Inline))
-                   (Strike (Vec Inline)) (Checkbox bool)
-                   (Code string) (Link string (Vec Inline)) (Image string string)
-                   LineBreak (NoteRef int) (Span string (Vec Inline))
-                   (RawInline string string)))
-  (: Block (Union (Para (Vec Inline)) (Heading int string (Vec Inline))
-                  (CodeBlock string string) (Quote (Vec Block))
-                  (ItemList bool (Vec (Vec Block))) Rule
-                  (Div string (Vec Block)) (RawBlock string string)
-                  (TableBlock Table)))
+  (: Inline (Union (: Str string) (: Emph (Vec Inline)) (: Strong (Vec Inline))
+                   (: Strike (Vec Inline)) (: Checkbox bool)
+                   (: Code string) (: Link string (Vec Inline)) (: Image string string)
+                   LineBreak (: NoteRef int) (: Span string (Vec Inline))
+                   (: RawInline string string)))
+  (: Block (Union (: Para (Vec Inline)) (: Heading int string (Vec Inline))
+                  (: CodeBlock string string) (: Quote (Vec Block))
+                  (: ItemList bool (Vec (Vec Block))) Rule
+                  (: Div string (Vec Block)) (: RawBlock string string)
+                  (: TableBlock Table)))
   (: Table (Record (: caption (Vec Inline))
                    (: aligns (Vec Align))              ; AlignDefault AlignLeft AlignCenter AlignRight
                    (: head (Vec (Vec (Vec Inline))))    ; rows of cells of text
