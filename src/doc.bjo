@@ -53,6 +53,8 @@
                    (: Strong (Vec Inline))
                    ;; Struck through: ~~this~~ in Markdown, +this+ in Org.
                    (: Strike (Vec Inline))
+                   (: Superscript (Vec Inline))
+                   (: Subscript (Vec Inline))
                    ;; A box, ticked or not: a task list item's [ ] or [x].
                    (: Checkbox bool)
                    ;; Code, as it is written.
@@ -72,11 +74,21 @@
                   ;; A level, 1 for a section and more for the ones inside it;
                   ;; an id to link to, unique in the document; and the title.
                   (: Heading int string (Vec Inline))
+                  ;; An unnumbered heading: not in the TOC, no id to link to.
+                  (: UnnumberedHeading int (Vec Inline))
                   ;; The language it is in, "" if nobody said, and the code.
                   (: CodeBlock string string)
+                  ;; A source, an alt text, and a caption. The alt text is ""
+                  ;; when none was given; the caption is empty when none was.
+                  (: Figure string string (Vec Inline))
                   (: Quote (Vec Block))
-                  ;; Whether it is numbered, and its items.
-                  (: ItemList bool (Vec (Vec Block)))
+                  ;; Whether it is numbered, the number it starts at, and its items.
+                  (: ItemList bool int (Vec (Vec Block)))
+                  ;; Lines of text, each a vec of inlines: verse, addresses.
+                  (: LineBlock (Vec (Vec Inline)))
+                  ;; Terms and their definitions: each entry is a term and a vec
+                  ;; of definitions, each definition a vec of blocks.
+                  (: DefinitionList (Vec (Tuple (Vec Inline) (Vec (Vec Block)))))
                   Rule
                   (: Div string (Vec Block))
                   (: RawBlock string string)
@@ -155,6 +167,8 @@
     ((Emph xs) (inlines->text xs))
     ((Strong xs) (inlines->text xs))
     ((Strike xs) (inlines->text xs))
+    ((Superscript xs) (inlines->text xs))
+    ((Subscript xs) (inlines->text xs))
     ((Checkbox checked) "")
     ((Code s) s)
     ((Link url xs) (inlines->text xs))
@@ -183,10 +197,19 @@
                              ((Heading level id xs) (vec-add out (Tuple level id xs)))
                              ((Quote inner) (vec-merge out (headings-in inner)))
                              ((Div c inner) (vec-merge out (headings-in inner)))
-                             ((ItemList numbered items)
+                             ((ItemList numbered start items)
                               (vec-merge out (loop (:for item items)
                                                    (:acc more (folding (vec-empty)
                                                                        (vec-merge more (headings-in item)))))))
+                             ((DefinitionList entries)
+                              (vec-merge out (loop (:for entry entries)
+                                                   (:acc more (folding (vec-empty)
+                                                                       (match entry
+                                                                         ((Tuple term defs)
+                                                                          (vec-merge more
+                                                                                     (loop (:for def defs)
+                                                                                           (:acc inner (folding (vec-empty)
+                                                                                                                (vec-merge inner (headings-in def)))))))))))))
                              (_ out))))))
 
 ;; ---------------------------------------------------------------------------
@@ -210,6 +233,10 @@
 ;;
 ;;     (para "See " (em "this") ".")
 ;;     (heading 1 "the-defaults" "The defaults")
+;;     (unnumbered-heading 3 "A local note")
+;;     (figure "cat.png" "A cat" "A cat in a box.")
+;;     (line-block (line "Roses are red") (line "Violets are blue"))
+;;     (deflist (entry (term "Key") (def (para "Value"))))
 
 (: quoted (-> string string))
 (defun (quoted s) (bjodat->string (BjoStr s)))
@@ -231,6 +258,8 @@
     ((Emph xs) (form "em" (vec-map inline->sexp xs)))
     ((Strong xs) (form "strong" (vec-map inline->sexp xs)))
     ((Strike xs) (form "strike" (vec-map inline->sexp xs)))
+    ((Superscript xs) (form "sup" (vec-map inline->sexp xs)))
+    ((Subscript xs) (form "sub" (vec-map inline->sexp xs)))
     ((Checkbox checked) (if checked "(checkbox #t)" "(checkbox #f)"))
     ((Code s) (form "code" [(quoted s)]))
     ((Link url xs) (form "link" (vec-insert (vec-map inline->sexp xs) 0 (quoted url))))
@@ -250,11 +279,26 @@
     ((Para xs) (form "para" (vec-map inline->sexp xs)))
     ((Heading level id xs)
      (form "heading" (vec-merge [(int->string level) (quoted id)] (vec-map inline->sexp xs))))
+    ((UnnumberedHeading level xs)
+     (form "unnumbered-heading" (vec-merge [(int->string level)] (vec-map inline->sexp xs))))
+    ((Figure src alt xs)
+     (form "figure" (vec-merge [(quoted src) (quoted alt)] (vec-map inline->sexp xs))))
     ((CodeBlock lang text) (form "codeblock" [(quoted lang) (quoted text)]))
     ((Quote bs) (form "quote" (vec-map block->sexp bs)))
-    ((ItemList numbered items)
-     (form (if numbered "numbered" "bullets")
+    ((ItemList numbered start items)
+     (form (if numbered (if (> start 1) (str "numbered-from-" (int->string start)) "numbered") "bullets")
            (vec-map (fun (item) (form "item" (vec-map block->sexp item))) items)))
+    ((LineBlock lines)
+     (form "line-block" (vec-map (fun (line) (form "line" (vec-map inline->sexp line))) lines)))
+    ((DefinitionList entries)
+     (form "deflist"
+           (vec-map (fun (entry)
+                      (match entry
+                        ((Tuple term defs)
+                         (form "entry"
+                               (vec-merge [(form "term" (vec-map inline->sexp term))]
+                                          (vec-map (fun (def) (form "def" (vec-map block->sexp def))) defs))))))
+                    entries)))
     (Rule "(rule)")
     ((Div c bs) (form "div" (vec-insert (vec-map block->sexp bs) 0 (quoted c))))
     ((RawBlock f s) (form "raw-block" [(quoted f) (quoted s)]))

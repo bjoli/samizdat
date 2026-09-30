@@ -240,7 +240,7 @@
     ((MdCodeBlock info code) [(CodeBlock (language (plain md info)) (plain md code))])
     ((MdQuote bs) [(Quote (blocks-of md bs))])
     ((MdListBlock l)
-     [(ItemList (record-ref l ordered) (vec-map (fun (item) (blocks-of md item)) (record-ref l items)))])
+     [(ItemList (record-ref l ordered) 1 (vec-map (fun (item) (blocks-of md item)) (record-ref l items)))])
     (MdRule [Rule])
     ((MdHtmlBlock s) [(RawBlock "html" (plain md s))])
     ((MdTableBlock t)

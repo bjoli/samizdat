@@ -26,7 +26,7 @@ is a function in @bjolang, so a blog that wants a new kind of box writes one
 Code goes in a body written @code|{|{ ... }|}|, where an @"@" is just a
 character, so nothing in it needs escaping:
 
-@codeblock[#:lang "scheme"]|{
+@codeblock[#:lang "bjolang"]|{
   (defun (greet name)
     (str "Hello, " name "!"))
 

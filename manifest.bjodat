@@ -15,7 +15,12 @@
     ;; with samizdat needs the .NET SDK's dotnet command.
     (package (name (markdig-bjolang))
              (version (version-at-least "0.2.0"))
-             (source (git (url "https://github.com/bjoli/markdig-bjolang")))))
+             (source (git (url "https://github.com/bjoli/markdig-bjolang"))))
+    ;; Highlighted code blocks in HTML. It brings TextMateSharp as a NuGet
+    ;; package, with Oniguruma as a native library.
+    (package (name (textmate-bjolang))
+             (version (version-at-least "0.1.0"))
+             (source (git (url "https://rikspucko.koketteriet.se/bjoli/textmate-bjolang")))))
 
   ;; A library: there is no src/main.bjo, so `bjo build` builds every module
   ;; under src/ rather than a program.

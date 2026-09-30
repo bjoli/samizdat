@@ -10,9 +10,11 @@
 ;;
 ;;   - its own commands, merged over the standard ones: @aside and @kbd,
 ;;     and @bjolang, which stands for a word;
-;;   - how the HTML converter writes them, as hooks;
+;;   - how the HTML converter writes them, as hooks that make nodes;
+;;   - code blocks highlighted by TextMate grammars, as class names, and the
+;;     stylesheet for them made from a VS Code theme;
 ;;   - the (meta ...) form read into a record of its own, with bjodat;
-;;   - a page around the document, which is only a string.
+;;   - a page around the document, made of nodes like the document.
 
 (import (std prelude))
 (import (text bjodat))
@@ -21,6 +23,7 @@
 (import (samizdat expand))
 (import (samizdat commands))
 (import (samizdat html))
+(import (only (textmate-bjolang core) highlighter highlighter-css))
 
 ;; ---------------------------------------------------------------------------
 ;; The meta form, as a record
@@ -59,45 +62,59 @@
 ;; How they look
 ;; ---------------------------------------------------------------------------
 
-(: blocks-hook (-> Html Block (Option string)))
+(: blocks-hook (-> Html Block (Option (List Node))))
 (defun (blocks-hook h b)
   (match b
-    ((Div "aside" bs) (Some (str "<aside>\n" (blocks->html h bs) "\n</aside>")))
+    ((Div "aside" bs) (Some (list (html-element "aside" Nil (blocks->nodes h bs)))))
     (_ None)))
 
-(: inlines-hook (-> Html Inline (Option string)))
+(: inlines-hook (-> Html Inline (Option (List Node))))
 (defun (inlines-hook h i)
   (match i
-    ((Span "kbd" xs) (Some (str "<kbd>" (inlines->html h xs) "</kbd>")))
+    ((Span "kbd" xs) (Some (list (html-element "kbd" Nil (inlines->nodes h xs)))))
     (_ None)))
 
-(def html (html-options #:block-hook blocks-hook #:inline-hook inlines-hook))
+;; Built once: reading a grammar is the slow part. Its theme gives the
+;; stylesheet below its colours; the page gives the code only class names.
+(def code-colours (highlighter #:theme 'light-plus))
+
+(def html (html-options #:block-hook blocks-hook #:inline-hook inlines-hook
+                        #:highlighter (Some code-colours) #:highlight-style 'classes))
 
 (def style
-  (str "<style>\n"
-       "body { max-width: 40em; margin: 2em auto; font: 18px/1.5 Georgia, serif; }\n"
-       "pre { background: #f4f4f4; padding: 1em; overflow-x: auto; }\n"
+  (str "body { max-width: 40em; margin: 2em auto; font: 18px/1.5 Georgia, serif; }\n"
+       "pre { padding: 1em; overflow-x: auto; }\n"
        "aside { border-left: 3px solid #999; padding-left: 1em; color: #444; }\n"
        "kbd { border: 1px solid #aaa; border-radius: 3px; padding: 0 .3em; }\n"
        ".notes { font-size: 90%; border-top: 1px solid #ccc; }\n"
        ".date { color: #777; }\n"
-       "</style>"))
+       (highlighter-css code-colours #:selector "pre.tm")))
 
 ;; ---------------------------------------------------------------------------
 ;; The page
 ;; ---------------------------------------------------------------------------
 
+(: text-element (-> string (List (Tuple string string)) string Node))
+(defun (text-element name attrs text) (html-element name attrs (list (xml-text text))))
+
 (: page (-> PostMeta Document string))
 (defun (page m doc)
-  (str "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
-       "<title>" (escape-html (record-ref m title)) "</title>\n" style "\n</head>\n<body>\n"
-       "<article>\n"
-       "<h1>" (escape-html (record-ref m title)) "</h1>\n"
-       "<p class=\"date\">" (escape-html (record-ref m date)) " · "
-       (escape-html (string-join (list->vec (list-map symbol->string (record-ref m tags))) ", "))
-       "</p>\n"
-       (document->html doc #:with html) "\n"
-       "</article>\n</body>\n</html>\n"))
+  (def tags (string-join (list->vec (list-map symbol->string (record-ref m tags))) ", "))
+  (str "<!DOCTYPE html>\n"
+       (nodes->html
+         (list (html-element "html" (list (Tuple "lang" "en"))
+                 (list (html-element "head" Nil
+                         (list (html-element "meta" (list (Tuple "charset" "utf-8")) Nil)
+                               (text-element "title" Nil (record-ref m title))
+                               (text-element "style" Nil style)))
+                       (html-element "body" Nil
+                         (list (html-element "article" Nil
+                                 (list-append
+                                   (list (text-element "h1" Nil (record-ref m title))
+                                         (text-element "p" (list (Tuple "class" "date"))
+                                                       (str (record-ref m date) " · " tags)))
+                                   (document->nodes doc #:with html)))))))))
+       "\n"))
 
 (: meta-of (-> Document (Result string PostMeta)))
 (defun (meta-of doc)

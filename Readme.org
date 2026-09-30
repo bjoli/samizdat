@@ -38,7 +38,7 @@ Files are called ~.sz~.
 | ~(samizdat commands)~    | ~standard-commands~                                          |
 | ~(samizdat lightweight)~ | commands that read Markdown's and Org's ways of writing: ~@read-list~, ~@read-table~ |
 | ~(samizdat markdown)~    | ~@markdown~ and ~@include-markdown~, through markdig-bjolang   |
-| ~(samizdat html)~        | a ~Document~ as HTML                                         |
+| ~(samizdat html)~        | a ~Document~ as HTML: ~(text xml)~ nodes, and a writer for them; code highlighted through textmate-bjolang |
 
 ** Using it
 
@@ -152,19 +152,26 @@ to say; ~html-page~ only looks for a ~(title ...)~.
 ** The standard commands
 
 | ~@em{...}~ ~@strong{...}~          | emphasis, and strong emphasis                       |
+| ~@strike{...}~                     | struck-through text                                 |
+| ~@sup{...}~  ~@sub{...}~           | superscript and subscript                           |
 | ~@code{...}~                       | code, as written                                    |
+| ~@checkbox~  ~@checkbox[#:checked #t]~ | an unchecked or checked box                     |
 | ~@link["url"]{...}~                | a link; ~@link["url"]~ shows the url                |
-| ~@image["src" #:alt "..."]~        | an image                                            |
+| ~@image["src" #:alt "..."]~        | an image (inline)                                   |
+| ~@image["src" #:alt "..."]{...}~   | a figure with a caption (block)                     |
 | ~@br~                              | a line break                                        |
 | ~@span["class"]{...}~              | text with a class, for a converter to do something with |
 | ~@raw["html"]{...}~                | text for one format; every other converter leaves it out |
 | ~@note{...}~                       | a footnote, which may hold paragraphs               |
-| ~@section{...}~                    | a heading; ~#:id~ chooses its id                    |
-| ~@subsection{...}~ ~@subsubsection{...}~ | the levels below it                           |
+| ~@section{...}~  ~@section*{...}~  | a heading (~#:id~ chooses its id); starred: no id, not in TOC |
+| ~@subsection{...}~  ~@subsection*{...}~ | the level below                              |
+| ~@subsubsection{...}~  ~@subsubsection*{...}~ | and the one below that                |
 | ~@codeblock[#:lang "x"]{...}~      | a block of code; usually with a verbatim body       |
 | ~@codeblock[#:file "x.bjo"]~       | the code in that file                               |
 | ~@blockquote{...}~                 | a quotation, which may hold paragraphs              |
-| ~@itemlist{@item{...} ...}~        | a list; ~#:style ordered~ numbers it                |
+| ~@itemlist{@item{...} ...}~        | a list; ~#:style ordered~ numbers it; ~#:start N~ begins at N |
+| ~@lineblock{...@br ...}~           | lines preserved: verse, addresses, lyrics           |
+| ~@deflist{@term{...} @def{...}}~   | a definition list; a term may have multiple ~@def~  |
 | ~@read-list{- ...}~                | a list written as Markdown and Org write one        |
 | ~@read-table{... }~                | a table written as Org writes one, or Markdown      |
 | ~@markdown{...}~                   | Markdown, translated into the document              |
@@ -404,14 +411,18 @@ A refusal from such a function names the file its command was written in.
 #+BEGIN_SRC scheme
 (type-rec
   (: Inline (Union (: Str string) (: Emph (Vec Inline)) (: Strong (Vec Inline))
-                   (: Strike (Vec Inline)) (: Checkbox bool)
-                   (: Code string) (: Link string (Vec Inline)) (: Image string string)
+                   (: Strike (Vec Inline)) (: Superscript (Vec Inline)) (: Subscript (Vec Inline))
+                   (: Checkbox bool) (: Code string)
+                   (: Link string (Vec Inline)) (: Image string string)
                    LineBreak (: NoteRef int) (: Span string (Vec Inline))
                    (: RawInline string string)))
   (: Block (Union (: Para (Vec Inline)) (: Heading int string (Vec Inline))
-                  (: CodeBlock string string) (: Quote (Vec Block))
-                  (: ItemList bool (Vec (Vec Block))) Rule
-                  (: Div string (Vec Block)) (: RawBlock string string)
+                  (: UnnumberedHeading int (Vec Inline))
+                  (: CodeBlock string string) (: Figure string string (Vec Inline))
+                  (: Quote (Vec Block)) (: ItemList bool int (Vec (Vec Block)))
+                  (: LineBlock (Vec (Vec Inline)))
+                  (: DefinitionList (Vec (Tuple (Vec Inline) (Vec (Vec Block)))))
+                  Rule (: Div string (Vec Block)) (: RawBlock string string)
                   (: TableBlock Table)))
   (: Table (Record (: caption (Vec Inline))
                    (: aligns (Vec Align))              ; AlignDefault AlignLeft AlignCenter AlignRight
@@ -436,28 +447,78 @@ lines long, which the tests use.
 
 *** The HTML one
 
-| ~(document->html doc)~               | the blocks, then the footnotes                |
+The document becomes ~(text xml)~ nodes — SXML — and the nodes become HTML:
+
+| ~(document->nodes doc)~              | the blocks, then the footnotes, as nodes      |
+| ~(document->html doc)~               | the same, written as HTML                     |
 | ~(html-page doc #:title #:head #:lang)~ | a whole page around it                     |
-| ~(html-options ...)~                 | what ~#:with~ takes, for either of those      |
+| ~(html-options ...)~                 | what ~#:with~ takes, for any of those         |
+| ~(nodes->html nodes)~                | any nodes, written as HTML                    |
+| ~(blocks->nodes h bs)~ ~(inlines->nodes h xs)~ | part of a document, as nodes        |
+| ~(html-element "name" attrs children)~ | an element, named by strings              |
+| ~(raw-html s)~ ~(raw-html-block s)~  | markup written as it is, in text or as a block |
+
+#+BEGIN_SRC scheme
+(document->nodes doc)
+;; ((h2 (@ (id "the-defaults")) "The defaults")
+;;  (p "Setting a cookie is one header, but getting it " (em "right") " is the hard part."
+;;     (sup (@ (class "note-ref")) (a (@ (id "note-ref-1") (href "#note-1")) "1")))
+;;  ...)
+#+END_SRC
+
+So a template can put the document in a page of nodes of its own, and
+~nodes->html~ writes the lot; ~examples/render.bjo~ does. ~(samizdat html)~
+passes on ~Node~ and ~xml-text~, so a template or a hook needs no import of
+~(text xml)~ — whose ~Document~ is not samizdat's.
 
 ~html-options~ takes ~#:heading-offset~ (default 1, so a section is an ~<h2>~
 under the page's ~<h1>~), ~#:id-prefix~ (for two documents on one page, whose
-~note-1~ would otherwise clash), and two hooks. A hook is asked about each
-block or inline first, and answers ~None~ for what it leaves alone; it is handed
-the options, so it can write what is inside with ~blocks->html~ and
-~inlines->html~:
+~note-1~ would otherwise clash), a highlighter, and two hooks. A hook is asked
+about each block or inline first, and answers ~None~ for what it leaves alone,
+or the nodes it makes; it is handed the options, so it can make what is inside
+with ~blocks->nodes~ and ~inlines->nodes~:
 
 #+BEGIN_SRC scheme
 (defun (asides h b)
   (match b
-    ((Div "aside" bs) (Some (str "<aside>\n" (blocks->html h bs) "\n</aside>")))
+    ((Div "aside" bs) (Some (list (html-element "aside" Nil (blocks->nodes h bs)))))
     (_ None)))
 
 (document->html doc #:with (html-options #:block-hook asides))
 #+END_SRC
 
-A code block is ~<pre><code class="language-scheme">~, the class highlight.js
-and Prism look for. A footnote is a ~<sup class="note-ref">~ link, and the notes
+*Highlighted code.* ~#:highlighter~ is a highlighter from
+[[https://rikspucko.koketteriet.se/bjoli/textmate-bjolang][textmate-bjolang]]:
+VS Code's grammars and themes, Bjolang's grammar among them. A code block in a
+language it knows is coloured; one it does not know is set plainly, in the
+same ~<pre>~.
+
+#+BEGIN_SRC scheme
+(import (only (textmate-bjolang core) highlighter highlighter-css))
+
+(def code-colours (highlighter #:theme 'light-plus))   ; once: reading grammars is slow
+
+(document->html doc #:with (html-options #:highlighter (Some code-colours)))
+(document->html doc #:with (html-options #:highlighter (Some code-colours)
+                                         #:highlight-style 'classes))
+(highlighter-css code-colours #:selector "pre.tm")     ; the stylesheet for 'classes
+#+END_SRC
+
+~#:highlight-style 'inline~, the default, writes the theme's colours into
+~style~ attributes, and the page needs nothing more. ~'classes~ writes class
+names from the grammar's scopes — ~tm-keyword tm-keyword-control~ — and
+~highlighter-css~ writes a stylesheet for them from any of the themes, or you
+write your own.
+
+*The writer* is HTML's, not XML's: ~<br>~ rather than ~<br />~, and an empty
+element closed, ~<td></td>~, which HTML would otherwise read as an open tag. A
+boolean attribute given its own name, ~(Tuple "open" "open")~, is written bare.
+An element with blocks among its children puts each on a line of its own; text
+is never moved, and nothing inside a ~<pre>~ is. The text of a ~<script>~ or a
+~<style>~ is not escaped.
+
+Without a highlighter, a code block is ~<pre><code class="language-scheme">~,
+the class highlight.js and Prism look for. A footnote is a ~<sup class="note-ref">~ link, and the notes
 are a ~<section class="notes">~ at the end, each with a link back. A table of
 contents is a ~<div class="toc">~. Struck text is ~<del>~, and a checkbox a
 disabled ~<input type="checkbox">~, as GitHub writes them. A table has its caption, a ~<thead>~, a
@@ -496,16 +557,45 @@ in the [...]: at line 1, column 18: a comma is not a separator here
            (source (git (url "https://github.com/bjoli/samizdat")))))
 #+END_SRC
 
-bjorsec and markdig-bjolang come along with it. markdig-bjolang brings Markdig
-as a NuGet package, so building anything that uses samizdat needs the .NET
-SDK's ~dotnet~ command; see Bjolang's ~Docs/Projects.org~, "NuGet packages".
+bjorsec, markdig-bjolang and textmate-bjolang come along with it.
+markdig-bjolang brings Markdig as a NuGet package and textmate-bjolang brings
+TextMateSharp, with the Oniguruma regex library in it as a native library for
+Linux, macOS and Windows. So building anything that uses samizdat needs the
+.NET SDK's ~dotnet~ command; see Bjolang's ~Docs/Projects.org~, "NuGet
+packages".
+
+** Editing in Emacs
+
+~samizdat-mode.el~ is a major mode for ~.sz~ files:
+
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'load-path "/path/to/samizdat")
+(require 'samizdat-mode)
+#+END_SRC
+
+It knows what the reader knows: an ~@~ in a ~|{ ... }|~ body is code and
+~|@~ is a command, ~@;~ comments run to the end of the line or the matching
+brace, and ~linus@example.com~ is text. Section titles, ~@em~, ~@strong~ and
+~@code~ bodies are shown as what they are. Filling leaves code, ~[...]~ and
+the meta form alone, and does not join a block command to the text above it.
+
+| ~C-c C-e~ | a command around the region, or an empty one |
+| ~C-c C-s~ | a section; ~C-u 2~ for a subsection         |
+| ~C-c C-b~ | a code block around the region               |
+| ~C-c C-l~ | a link around the region                     |
+| ~C-c '~   | the code block at point, in its language's mode, as org-mode does it; ~C-c '~ again puts it back |
+| ~C-c C-o~ | follow the command at point: a link, an ~@ref~, or the file an ~@include~, ~@image~ or ~#:file~ names |
+
+~outline-minor-mode~ folds sections and ~imenu~ lists them. Commands of your
+own go in ~samizdat-command-names~, for completion after an ~@~, and
+~samizdat-code-block-modes~ says which mode a ~#:lang~ is edited in.
 
 ** Running the tests
 
 #+BEGIN_SRC sh
 bjo run tests/read.bjo      ;; 42 checks: the reader on its own
 bjo run tests/expand.bjo    ;; 76 checks: commands, paragraphs, typography, refusals
-bjo run tests/html.bjo      ;; 27 checks: the HTML converter
+bjo run tests/html.bjo      ;; 46 checks: the HTML converter, highlighting, the writer
 bjo run tests/markdown.bjo  ;; 15 checks: Markdown, translated
 #+END_SRC
 
@@ -521,9 +611,15 @@ errors. ~expand~ runs the standard commands and compares the tree through
 command, and one that runs itself until the depth limit stops it; then the
 table of contents, references, including — with the files in
 ~tests/fixtures/~, a loop among them — ~@read-list~ and ~@read-table~. ~html~ compares HTML
-as text, hooks and a whole page included.
+as text, hooks and a whole page included; code highlighted inline and as
+classes; the document as nodes; and what the writer does with empty, void and
+raw elements, boolean attributes, a ~<pre>~ and a ~<style>~.
 
 ** Not yet
 
 - A second converter — plain text, or LaTeX.
 - An ~@~ inside ~[...]~, for a command as an argument.
+- ~@anchor["id"]~, so that ~@ref~ can target something other than a heading.
+- ~@no-typography{...}~, to suppress typography inside a span.
+- ~@read-list~ starting at the first item's number, for ~3. first item~.
+- Math: inline and display LaTeX, rendered by MathJax or KaTeX.

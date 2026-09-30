@@ -9,22 +9,28 @@
 ;;
 ;; Text
 ;;     @em{...}  @strong{...}          emphasis, and strong emphasis
+;;     @strike{...}                    struck-through text
+;;     @sup{...}  @sub{...}            superscript and subscript
 ;;     @code{...}                      code, as written
+;;     @checkbox  @checkbox[#:checked #t]  an unchecked or checked box
 ;;     @link["url"]{...}  @link["url"] a link; with no body the url is its text
-;;     @image["src" #:alt "..."]       an image
+;;     @image["src" #:alt "..."]       an image (inline)
+;;     @image["src" #:alt "..."]{...}  a figure with a caption (block)
 ;;     @br                             a line break
 ;;     @span["class"]{...}             text with a class, for a converter to style
 ;;     @raw["html"]{...}               text for one format only
 ;;     @note{...}                      a footnote, which may hold paragraphs
 ;;
 ;; Blocks
-;;     @section{...}                   a heading, with #:id to choose its id;
-;;     @subsection{...}                the next level down,
-;;     @subsubsection{...}             and the one below that
+;;     @lineblock{...@br ...}          lines preserved as-is: verse, addresses
+;;     @deflist{@term{...} @def{...}}  a definition list
+;;     @section{...}  @section*{...}   a heading, with #:id; starred: no id, not in TOC
+;;     @subsection{...}  @subsection*{...}   the level below
+;;     @subsubsection{...}  @subsubsection*{...}   and the one below that
 ;;     @codeblock[#:lang "x"]|{...}|   a block of code, or with #:file "x.bjo"
 ;;                                     the code in that file
 ;;     @blockquote{...}                a quotation, which may hold paragraphs
-;;     @itemlist{@item{...} ...}       a list; #:style ordered numbers it
+;;     @itemlist{@item{...} ...}       a list; #:style ordered numbers it; #:start N begins at N
 ;;     @read-list{- ...}               a list written as in Markdown or Org
 ;;     @read-table{| ... |}            a table written as in Org, or Markdown
 ;;     @hr                             a rule
@@ -98,8 +104,11 @@
 (: image (-> Ctx Call (Vec Piece)))
 (defun (image cx c)
   (check-keywords! cx c ["alt"])
-  (no-body! cx c)
-  (inline (Image (arg-string cx c 0) (kw-string-or cx c "alt" ""))))
+  (def src (arg-string cx c 0))
+  (def alt (kw-string-or cx c "alt" ""))
+  (if (has-body? c)
+      (block (Figure src alt (expand-inlines cx c)))
+      (inline (Image src alt))))
 
 (: br (-> Ctx Call (Vec Piece)))
 (defun (br cx c)
@@ -123,6 +132,31 @@
   (needs-body! cx c)
   (inline (NoteRef (add-note! cx (fun () (expand-blocks cx c))))))
 
+(: strike (-> Ctx Call (Vec Piece)))
+(defun (strike cx c)
+  (no-arguments! cx c)
+  (needs-body! cx c)
+  (inline (Strike (expand-inlines cx c))))
+
+(: sup (-> Ctx Call (Vec Piece)))
+(defun (sup cx c)
+  (no-arguments! cx c)
+  (needs-body! cx c)
+  (inline (Superscript (expand-inlines cx c))))
+
+(: sub (-> Ctx Call (Vec Piece)))
+(defun (sub cx c)
+  (no-arguments! cx c)
+  (needs-body! cx c)
+  (inline (Subscript (expand-inlines cx c))))
+
+(: checkbox (-> Ctx Call (Vec Piece)))
+(defun (checkbox cx c)
+  (check-keywords! cx c ["checked"])
+  (no-body! cx c)
+  (when (> (arg-count c) 0) (refuse cx c "takes no arguments; use #:checked #t for a checked box"))
+  (inline (Checkbox (kw-bool-or cx c "checked" #f))))
+
 ;; ---------------------------------------------------------------------------
 ;; Blocks
 ;; ---------------------------------------------------------------------------
@@ -137,6 +171,14 @@
     (block (Heading level
                     (unique-id! cx (if (string-empty? id) (inlines->text title) id))
                     title))))
+
+(: heading* (-> int Command))
+(defun (heading* level)
+  (fun (cx c)
+    (check-keywords! cx c (vec-empty))
+    (needs-body! cx c)
+    (def title (expand-inlines cx c))
+    (block (UnnumberedHeading level title))))
 
 ;; The code is the body, or with #:file the file's text, relative to the
 ;; document; a trailing newline in the file is not part of it.
@@ -160,10 +202,11 @@
 ;; The items are read off the body, which holds nothing else but space.
 (: itemlist (-> Ctx Call (Vec Piece)))
 (defun (itemlist cx c)
-  (check-keywords! cx c ["style"])
+  (check-keywords! cx c ["style" "start"])
   (def style (kw-symbol-or cx c "style" "bullets"))
   (unless (or (= style "bullets") (= style "ordered"))
     (refuse cx c (str "#:style is bullets or ordered, not " style)))
+  (def start (kw-int-or cx c "start" 1))
   (def items
     (loop (:for item (body-items c))
           (:acc out (folding (vec-empty)
@@ -177,11 +220,82 @@
                                   (refuse cx inner "cannot stand in an @itemlist, where only @item{...} can"))
                                 (check-keywords! cx inner (vec-empty))
                                 (vec-add out (expand-blocks cx inner))))))))
-  (block (ItemList (= style "ordered") items)))
+  (block (ItemList (= style "ordered") start items)))
 
 ;; An @item is read by the @itemlist it is in, and anywhere else is a mistake.
 (: item (-> Ctx Call (Vec Piece)))
 (defun (item cx c) (refuse cx c "belongs inside an @itemlist"))
+
+(: term (-> Ctx Call (Vec Piece)))
+(defun (term cx c) (refuse cx c "belongs inside a @deflist"))
+
+(: def (-> Ctx Call (Vec Piece)))
+(defun (def cx c) (refuse cx c "belongs inside a @deflist"))
+
+;; Split a vec of inlines on LineBreak nodes, producing a vec of lines.
+(: split-lines (-> (Vec Inline) (Vec (Vec Inline))))
+(defun (split-lines xs)
+  (match (loop (:for x xs)
+               (:acc st (folding (Tuple (vec-empty) (vec-empty))
+                                 (match (Tuple st x)
+                                   ((Tuple (Tuple lines current) LineBreak)
+                                    (Tuple (vec-add lines current) (vec-empty)))
+                                   ((Tuple (Tuple lines current) inline)
+                                    (Tuple lines (vec-add current inline)))))))
+    ((Tuple lines current)
+     (if (vec-empty? current) lines (vec-add lines current)))))
+
+(: lineblock (-> Ctx Call (Vec Piece)))
+(defun (lineblock cx c)
+  (no-arguments! cx c)
+  (needs-body! cx c)
+  (block (LineBlock (split-lines (expand-inlines cx c)))))
+
+;; Flush a pending (term, defs) entry into entries.
+(: flush-entry (-> (Vec (Tuple (Vec Inline) (Vec (Vec Block))))
+                   (Option (Tuple (Vec Inline) (Vec (Vec Block))))
+                   (Vec (Tuple (Vec Inline) (Vec (Vec Block))))))
+(defun (flush-entry entries current)
+  (match current
+    (None entries)
+    ((Some entry) (vec-add entries entry))))
+
+(: deflist (-> Ctx Call (Vec Piece)))
+(defun (deflist cx c)
+  (check-keywords! cx c (vec-empty))
+  (needs-body! cx c)
+  (def final
+    (loop (:for item (body-items c))
+          (:acc st (folding (Tuple (vec-empty) None)
+                            (match item
+                              ((Text s)
+                               (unless (string-empty? (string-trim s))
+                                 (refuse cx c "holds only @term{...} and @def{...}, and there is text in it"))
+                               st)
+                              ((Cmd inner)
+                               (def nm (record-ref inner name))
+                               (cond
+                                 ((= nm "term")
+                                  (check-keywords! cx inner (vec-empty))
+                                  (needs-body! cx inner)
+                                  (match st
+                                    ((Tuple entries current)
+                                     (Tuple (flush-entry entries current)
+                                            (Some (Tuple (expand-inlines cx inner) (vec-empty)))))))
+                                 ((= nm "def")
+                                  (check-keywords! cx inner (vec-empty))
+                                  (needs-body! cx inner)
+                                  (match st
+                                    ((Tuple entries None)
+                                     (refuse cx inner "has a @def before any @term"))
+                                    ((Tuple entries (Some (Tuple t defs)))
+                                     (Tuple entries (Some (Tuple t (vec-add defs (expand-blocks cx inner))))))))
+                                 (else
+                                  (refuse cx inner "cannot stand in a @deflist; only @term{...} and @def{...} can")))))))))
+  (match final
+    ((Tuple entries current)
+     (def all (flush-entry entries current))
+     (if (vec-empty? all) nothing (block (DefinitionList all))))))
 
 (: hr (-> Ctx Call (Vec Piece)))
 (defun (hr cx c)
@@ -223,7 +337,7 @@
       ((> (entry-level (vec-ref hs i)) level)
        (match (toc-level hs i (entry-level (vec-ref hs i)))
          ((Tuple sub next)
-          (def sublist (ItemList #f sub))
+          (def sublist (ItemList #f 1 sub))
           (def last (- (vec-length items) 1))
           (go next (if (vec-empty? items)
                        (vec-add items [sublist])
@@ -239,7 +353,7 @@
       (let ((top (loop (:for h hs)
                        (:acc least (folding 1000 (if (< (entry-level h) least) (entry-level h) least))))))
         (match (toc-level hs 0 top)
-          ((Tuple items next) [(Div "toc" [(ItemList #f items)])])))))
+          ((Tuple items next) [(Div "toc" [(ItemList #f 1 items)])])))))
 
 ;; @toc, or @toc[#:depth 3]: the headings down to that level — sections and
 ;; subsections by default — as nested lists of links. It is made once every
@@ -296,6 +410,10 @@
        ("include" include)
        ("em" em)
        ("strong" strong)
+       ("strike" strike)
+       ("sup" sup)
+       ("sub" sub)
+       ("checkbox" checkbox)
        ("code" code)
        ("link" link)
        ("image" image)
@@ -304,11 +422,18 @@
        ("raw" raw)
        ("note" note)
        ("section" (heading 1))
+       ("section*" (heading* 1))
        ("subsection" (heading 2))
+       ("subsection*" (heading* 2))
        ("subsubsection" (heading 3))
+       ("subsubsection*" (heading* 3))
        ("codeblock" codeblock)
        ("blockquote" blockquote)
        ("itemlist" itemlist)
+       ("lineblock" lineblock)
+       ("deflist" deflist)
+       ("term" term)
+       ("def" def)
        ("read-list" read-list)
        ("read-table" read-table)
        ("markdown" markdown)

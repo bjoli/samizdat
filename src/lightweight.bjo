@@ -179,7 +179,7 @@
 
 (: list->block (-> Ctx bool (Vec (Vec Part)) Block))
 (defun (list->block cx numbered items)
-  (ItemList numbered (vec-map (fun (item) (item->blocks cx item)) items)))
+  (ItemList numbered 1 (vec-map (fun (item) (item->blocks cx item)) items)))
 
 (: item->blocks (-> Ctx (Vec Part) (Vec Block)))
 (defun (item->blocks cx parts)
