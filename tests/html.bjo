@@ -161,8 +161,11 @@
           (html-of "@itemlist[#:style ordered #:start 3]{@item{a} @item{b}}")
           "<ol start=\"3\">\n<li>a</li>\n<li>b</li>\n</ol>")
   (expect "@lineblock preserves lines, @br is the separator"
-          (html-of "@lineblock{Roses are red@br\nViolets are blue}")
+          (html-of "@lineblock{Roses are red@|br|\nViolets are blue}")
           "<div class=\"line-block\">Roses are red<br>\nViolets are blue</div>")
+  (expect "and an empty line between two is kept"
+          (html-of "@lineblock{One@|br|\n@|br|\nthree}")
+          "<div class=\"line-block\">One<br>\n<br>\nthree</div>")
   (expect "@deflist with two entries, one with two definitions"
           (html-of "@deflist{\n@term{Key} @def{Value}\n@term{Two} @def{First} @def{Second}\n}")
           "<dl>\n<dt>Key</dt>\n<dd>Value</dd>\n<dt>Two</dt>\n<dd>First</dd>\n<dd>Second</dd>\n</dl>")

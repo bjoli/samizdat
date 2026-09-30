@@ -595,7 +595,7 @@ own go in ~samizdat-command-names~, for completion after an ~@~, and
 #+BEGIN_SRC sh
 bjo run tests/read.bjo      ;; 42 checks: the reader on its own
 bjo run tests/expand.bjo    ;; 76 checks: commands, paragraphs, typography, refusals
-bjo run tests/html.bjo      ;; 46 checks: the HTML converter, highlighting, the writer
+bjo run tests/html.bjo      ;; 47 checks: the HTML converter, highlighting, the writer
 bjo run tests/markdown.bjo  ;; 15 checks: Markdown, translated
 #+END_SRC
 

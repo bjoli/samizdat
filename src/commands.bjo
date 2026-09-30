@@ -233,6 +233,9 @@
 (defun (def cx c) (refuse cx c "belongs inside a @deflist"))
 
 ;; Split a vec of inlines on LineBreak nodes, producing a vec of lines.
+;;
+;; The newline written after a @br in the markup is where that line ends, not
+;; text of the next one, and is dropped: a converter puts in its own.
 (: split-lines (-> (Vec Inline) (Vec (Vec Inline))))
 (defun (split-lines xs)
   (match (loop (:for x xs)
@@ -241,9 +244,18 @@
                                    ((Tuple (Tuple lines current) LineBreak)
                                     (Tuple (vec-add lines current) (vec-empty)))
                                    ((Tuple (Tuple lines current) inline)
-                                    (Tuple lines (vec-add current inline)))))))
+                                    (Tuple lines (vec-add current (if (and (vec-empty? current) (not (vec-empty? lines)))
+                                                                      (without-leading-newline inline)
+                                                                      inline))))))))
     ((Tuple lines current)
      (if (vec-empty? current) lines (vec-add lines current)))))
+
+;; Text less the newline it begins with, if it begins with one.
+(: without-leading-newline (-> Inline Inline))
+(defun (without-leading-newline x)
+  (match x
+    ((Str s) (if (string-starts-with? s "\n") (Str (.Substring s 1)) x))
+    (_ x)))
 
 (: lineblock (-> Ctx Call (Vec Piece)))
 (defun (lineblock cx c)
