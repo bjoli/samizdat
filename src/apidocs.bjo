@@ -6,6 +6,8 @@
 ;;
 ;; Bjolang modules' own documentation, shown in a document:
 ;;
+;;     @generate-docs[#:module "std random"]  a whole page: overview, and a
+;;                                     reference indexed by kind
 ;;     @defmodule[(std random)]{...}   the module's doc, and the module the
 ;;                                     commands below mean from here on
 ;;     @defdoc[random-int]{...}        one definition's doc, and more text
@@ -22,7 +24,7 @@
 ;; the path of a module's source relative to the document, whose dll is beside
 ;; it.
 
-(export defmodule defdoc defdocs docref)
+(export generate-docs defmodule defdoc defdocs docref)
 
 (import (std prelude))
 (import (text bjodat-core))
@@ -367,6 +369,115 @@
                            (match (record-ref d subject)
                              (SubjectModule out)
                              (_ (vec-merge out (block (entry-blocks cx c m d level (vec-empty))))))))))
+
+;; The module #:module or #:path names, as `module-of` takes it: "std
+;; datetime", with or without its parentheses, is a name; a path is a string.
+(: generated-module (-> Ctx Call Bjodat))
+(defun (generated-module cx c)
+  (match (Tuple (keyword c "module") (keyword c "path"))
+    ((Tuple (Some written) None)
+     (def text (match written
+                 ((BjoStr s) s)
+                 ((BjoSym s) (symbol->string s))
+                 ((BjoList _) (bjodat->string written))
+                 (_ (refuse cx c (str "#:module is a module's name, \"std datetime\", and not "
+                                      (bjodat->string written))))))
+     (def segments (vec-filter (fun (s) (not (string-empty? s)))
+                               (string-split (string-replace (string-replace text "(" " ") ")" " ") " ")))
+     (when (vec-empty? segments) (refuse cx c "#:module names no module"))
+     (BjoList (vec->list (vec-map (fun (s) (BjoSym (string->symbol s))) segments))))
+    ((Tuple None (Some (BjoStr path))) (BjoStr path))
+    ((Tuple None (Some other))
+     (refuse cx c (str "#:path is the path of a module's source, a string, and not " (bjodat->string other))))
+    ((Tuple None None) (refuse cx c "needs #:module \"std datetime\" or #:path \"the/module.bjo\""))
+    (_ (refuse cx c "takes #:module or #:path, not both"))))
+
+;; Names in the order a reader looks for them: letters before case, and a
+;; reader extension's # set aside.
+(: index-key (-> string string))
+(defun (index-key name)
+  (str (string-downcase (string-replace name "#" "")) "\t" name))
+
+;; The reference's groups, in the order the page has them. A group nothing is
+;; in is left out.
+(: group-names (Vec string))
+(def group-names ["Types" "Functions" "Values" "Macros" "Other"])
+
+(: group-of (-> Doc string))
+(defun (group-of d)
+  (match (record-ref d subject)
+    (SubjectModule "")
+    (_ (match (record-ref d kind)
+         ((or KindRecord KindUnion KindAlias KindTrait) "Types")
+         (KindFunction "Functions")
+         (KindValue "Values")
+         ((or KindMacro KindReader) "Macros")
+         (_ "Other")))))
+
+;; A group's names in alphabetical order, each a link to its entry.
+(: group-index (-> Ctx ApiModule (Vec Doc) string (Vec (Vec Block))))
+(defun (group-index cx m docs g)
+  (def keys (loop (:for d docs)
+                  (:acc out (folding Nil
+                                     (if (= (group-of d) g)
+                                         (Cons (index-key (doc-subject->string (record-ref d subject))) out)
+                                         out)))))
+  (vec-map (fun (key)
+             (def name (vec-ref (string-split key "\t") 1))
+             (match (state-ref cx (shown-key m name))
+               ((Some (BjoStr id)) [(Para [(Link (str "#" id) [(Code name)])])])
+               (_ [(Para [(Code name)])])))
+           (list->vec (list-sort keys))))
+
+;; @generate-docs[#:module "std datetime"], or #:path "src/thing.bjo": a whole
+;; page for a module. A link to the reference first; then Overview, the
+;; module's own doc and the body; then Reference, every name in alphabetical
+;; order as links, and every definition's doc in the order the module wrote
+;; them. The module is @docref's from here on.
+(: generate-docs (-> Ctx Call (Vec Piece)))
+(defun (generate-docs cx c)
+  (check-keywords! cx c ["module" "path"])
+  (when (> (arg-count c) 0) (refuse cx c "takes no arguments: #:module \"std datetime\" or #:path \"...\""))
+  (def written (generated-module cx c))
+  (def m (module-of cx c written))
+  (state-set! cx current-key written)
+  (def docs (docs-of cx c m))
+  (def overview-id (unique-id! cx "overview"))
+  (def reference-id (unique-id! cx "reference"))
+  (def own (match (module-doc docs)
+             ((Some d) (doc-blocks cx c m d))
+             (None (vec-empty))))
+  ;; Each group's heading and entries first, so that every id exists when
+  ;; the index that comes before them links to it.
+  (def groups
+    (loop (:for g group-names)
+          (:acc out (folding (vec-empty)
+                             (let ((members (vec-filter (fun (d) (= (group-of d) g)) docs)))
+                               (if (vec-empty? members)
+                                   out
+                                   (let ((id (unique-id! cx g)))
+                                     (vec-add out (Tuple g id (vec-map (fun (d) (entry-blocks cx c m d 3 (vec-empty)))
+                                                                       members))))))))))
+  (def index
+    (loop (:for group groups)
+          (:acc out (folding (vec-empty)
+                             (match group
+                               ((Tuple g id entries)
+                                (vec-merge out [(Para [(Link (str "#" id) [(Strong [(Str g)])])])
+                                                (ItemList #f 1 (group-index cx m docs g))])))))))
+  (def sections
+    (loop (:for group groups)
+          (:acc out (folding (vec-empty)
+                             (match group
+                               ((Tuple g id entries)
+                                (vec-merge (vec-add out (Heading 2 id [(Str g)])) entries)))))))
+  (def top [(Para [(Link (str "#" reference-id) [(Str "Reference")])])
+            (Heading 1 overview-id [(Str "Overview")])
+            (Div "doc-module" (vec-merge own (expand-blocks cx c)))
+            (Heading 1 reference-id [(Str "Reference")])
+            (Div "doc-index" index)])
+  (loop (:for b (vec-merge top sections))
+        (:acc out (folding (vec-empty) (vec-merge out (block b))))))
 
 ;; @docref[random-int], or @docref[random-int]{text}: a link to the definition
 ;; where the document shows it, before or after. A name the module has no doc

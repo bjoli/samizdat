@@ -43,6 +43,7 @@
 ;;     @include["other.sz"]            another document, as if written here
 ;;
 ;; Bjolang modules' docs, from (samizdat apidocs)
+;;     @generate-docs[#:module "std random"]  a whole page of a module's docs
 ;;     @defmodule[(std random)]{...}   the module's doc, and the module from here on
 ;;     @defdoc[random-int]{...}        a definition's doc
 ;;     @defdocs                        every definition's doc
@@ -465,4 +466,5 @@
        ("defmodule" defmodule)
        ("defdoc" defdoc)
        ("defdocs" defdocs)
-       ("docref" docref)))
+       ("docref" docref)
+       ("generate-docs" generate-docs)))

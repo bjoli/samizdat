@@ -88,6 +88,41 @@
                                "(div \"doc-module\" (para \"Things to")
           #t)
 
+  ;; --- a whole page ---------------------------------------------------------
+  (def page (string-split (tree "@generate-docs[#:path \"fixtures/apidoc-lib.bjo\"]{Ours.}") "\n"))
+  (expect "a page: a link to the reference, the overview, the reference, an index by kind"
+          (list (vec-ref page 0) (vec-ref page 1) (vec-ref page 3) (vec-ref page 4))
+          (list "(para (link \"#reference\" \"Reference\"))"
+                "(heading 1 \"overview\" \"Overview\")"
+                "(heading 1 \"reference\" \"Reference\")"
+                (str "(div \"doc-index\""
+                     " (para (link \"#types\" (strong \"Types\"))) (bullets (item (para (link \"#apidoc-lib-point\" (code \"Point\")))))"
+                     " (para (link \"#functions\" (strong \"Functions\"))) (bullets (item (para (link \"#apidoc-lib-bound\" (code \"bound\")))))"
+                     " (para (link \"#macros\" (strong \"Macros\"))) (bullets (item (para (link \"#apidoc-lib-with-twice\" (code \"with-twice\"))))))")))
+  (expect "the overview is the module's doc and the body"
+          (string-ends-with? (vec-ref page 2) "(para \"Ours.\"))")
+          #t)
+  (expect "the entries follow under a heading for each kind"
+          (list (= (vec-ref page 5) "(heading 2 \"types\" \"Types\")")
+                (string-starts-with? (vec-ref page 6) "(div \"doc-entry\" (heading 3 \"apidoc-lib-point\"")
+                (= (vec-ref page 7) "(heading 2 \"functions\" \"Functions\")")
+                (string-starts-with? (vec-ref page 8) "(div \"doc-entry\" (heading 3 \"apidoc-lib-bound\"")
+                (= (vec-ref page 9) "(heading 2 \"macros\" \"Macros\")")
+                (string-starts-with? (vec-ref page 10) "(div \"doc-entry\" (heading 3 \"apidoc-lib-with-twice\""))
+          (list #t #t #t #t #t #t))
+  (expect "a module by name, with or without its parentheses"
+          (list (string-contains? (tree "@generate-docs[#:module \"janitor docs\"]") "(heading 3 \"janitor-docs-module-docs\"")
+                (string-contains? (tree "@generate-docs[#:module \"(janitor docs)\"]") "(heading 3 \"janitor-docs-module-docs\""))
+          (list #t #t))
+  (expect "the page's module is @docref's"
+          (string-contains? (tree "@generate-docs[#:module \"janitor docs\"]\n@docref[doc-named]")
+                            "(para (link \"#janitor-docs-doc-named\" (code \"doc-named\")))")
+          #t)
+  (expect "neither #:module nor #:path" (refusal "@generate-docs")
+          "tests/post.sz:1:1: @generate-docs: needs #:module \"std datetime\" or #:path \"the/module.bjo\"")
+  (expect "both" (refusal "@generate-docs[#:module \"std random\" #:path \"x.bjo\"]")
+          "tests/post.sz:1:1: @generate-docs: takes #:module or #:path, not both")
+
   ;; --- refusals -----------------------------------------------------------
   (expect "no module yet" (refusal "@defdoc[bound]")
           "tests/post.sz:1:1: @defdoc: names no module: write @defmodule[(the module)] before it, or give it #:module")
