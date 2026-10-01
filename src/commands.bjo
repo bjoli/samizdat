@@ -42,6 +42,12 @@
 ;;     @ref["id"]  @ref["id"]{...}     a link to a heading, anywhere in it
 ;;     @include["other.sz"]            another document, as if written here
 ;;
+;; Bjolang modules' docs, from (samizdat apidocs)
+;;     @defmodule[(std random)]{...}   the module's doc, and the module from here on
+;;     @defdoc[random-int]{...}        a definition's doc
+;;     @defdocs                        every definition's doc
+;;     @docref[random-int]{...}        a link to a definition shown in the document
+;;
 ;; And @comment{...}, which is nothing, as @;{...} is.
 ;;
 ;; To add your own, or replace one of these, merge a table over this one —
@@ -55,6 +61,7 @@
 (import (samizdat expand))
 (import (samizdat lightweight))
 (import (samizdat markdown))
+(import (samizdat apidocs))
 
 ;; ---------------------------------------------------------------------------
 ;; Checking a call
@@ -454,4 +461,8 @@
        ("hr" hr)
        ("div" div)
        ("raw-block" raw-block)
-       ("comment" comment)))
+       ("comment" comment)
+       ("defmodule" defmodule)
+       ("defdoc" defdoc)
+       ("defdocs" defdocs)
+       ("docref" docref)))

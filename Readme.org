@@ -30,7 +30,7 @@ puts them somewhere else.
 
 Files are called ~.sz~.
 
-** The seven modules
+** The eight modules
 
 | ~(samizdat read)~        | the reader: text to ~At~ items, text or commands, on bjorsec |
 | ~(samizdat doc)~         | the document: ~Block~, ~Inline~, ~Document~; a printer to s-expressions |
@@ -38,6 +38,7 @@ Files are called ~.sz~.
 | ~(samizdat commands)~    | ~standard-commands~                                          |
 | ~(samizdat lightweight)~ | commands that read Markdown's and Org's ways of writing: ~@read-list~, ~@read-table~ |
 | ~(samizdat markdown)~    | ~@markdown~ and ~@include-markdown~, through markdig-bjolang   |
+| ~(samizdat apidocs)~     | Bjolang modules' own docs: ~@defmodule~, ~@defdoc~, ~@defdocs~, ~@docref~ |
 | ~(samizdat html)~        | a ~Document~ as HTML: ~(text xml)~ nodes, and a writer for them; code highlighted through textmate-bjolang |
 
 ** Using it
@@ -182,6 +183,10 @@ to say; ~html-page~ only looks for a ~(title ...)~.
 | ~@toc~                             | a table of contents; ~#:depth 3~ goes a level deeper |
 | ~@ref["id"]~ ~@ref["id"]{...}~     | a link to a heading, before or after it             |
 | ~@include["other.sz"]~             | another document, as if it were written here        |
+| ~@defmodule[(std random)]{...}~    | a Bjolang module's doc; see below                   |
+| ~@defdoc[random-int]{...}~         | one of its definitions' doc                         |
+| ~@defdocs~                         | all of them                                         |
+| ~@docref[random-int]~              | a link to a definition the document shows           |
 | ~@comment{...}~                    | nothing                                             |
 
 Each checks what it is given. A misspelt keyword says so rather than being
@@ -227,6 +232,54 @@ may come before it or after. An id no heading has is refused.
 
 Both are made in a way a command of your own can use too; see ~defer-blocks~
 under Writing a command.
+
+** Bjolang modules' docs
+
+A Bjolang module documents itself with ~(:doc ...)~, and the compiler checks
+those docs and publishes them in the module's dll. Four commands show them:
+
+#+BEGIN_SRC text
+@section{Random numbers}
+
+@defmodule[(std random)]{
+  Everything here takes @code{#:rng}.
+}
+
+@defdoc[random-int]{
+  A die is @code{(random-int 1 6)}.
+}
+
+Or use @docref[random-double], further down.
+
+@defdoc[random-double]
+#+END_SRC
+
+- ~@defmodule~ shows the module's own doc and then its body, and is the module
+  the commands after it mean, until the next. A module is a name, found as the
+  compiler finds it — the installed library, and the packages of the nearest
+  ~.bjo/roots~ above the document — or a string, the path of a module's source
+  relative to the document, whose dll is beside it.
+- ~@defdoc[name]~ shows one definition: a heading to link to, what kind of
+  definition it is, its type and its head as written, or how a macro is
+  written; the summary; the arguments, fields and cases with their texts;
+  what it returns and raises; the examples, the long text, and links to the
+  related names the document shows. Then its body, which is the document's
+  own. A reader extension is named with a string: ~@defdoc["#pair"]~.
+- ~@defdocs~ shows every definition, in the module's order.
+- ~@docref[name]~ is a link to a definition the document shows, before or
+  after; ~@docref[name]{text}~ says something else.
+
+~@defdoc~ and ~@defdocs~ take ~#:level~, the level of the heading, 4 unless it
+says, so that a table of contents of sections leaves the definitions out;
+all three take ~#:module~ for another module than ~@defmodule~'s. A name the
+module has no doc for is refused, and so is a ~@docref~ to one the document
+never shows, a definition shown twice, and a module that is not compiled.
+
+The texts in a doc are samizdat markup, expanded with the document's commands.
+The dll is one of the document's ~sources~, so a page kept from it goes stale
+when the module is rebuilt. In the tree an entry is a ~Div~ of class
+~doc-entry~, and a module's doc one of class ~doc-module~, with the kind in a
+~Span~ of class ~doc-kind~: a stylesheet has what it needs.
 
 ** Lists, as Markdown and Org write them
 
@@ -381,6 +434,8 @@ What a command is written with, from ~(samizdat expand)~:
 | ~(positional c)~ ~(keyword c "k")~     | the ~Bjodat~ values themselves                  |
 | ~(check-keywords! cx c ["k" ...])~     | refuses any other keyword, and one with no value |
 | ~(refuse cx c "why")~                  | stops, with where the command is                |
+| ~(state-ref cx "k")~ ~(state-set! cx "k" v)~ | what a command keeps for the rest of the document, a ~Bjodat~ |
+| ~(add-source! cx path)~                | a file the document was made from, read some other way than ~read-relative~ |
 | ~(add-note! cx (fun () blocks))~       | a footnote; answers its number, for a ~NoteRef~ |
 | ~(unique-id! cx text)~                 | an id made from text, used nowhere else in the document |
 | ~(text-command "text")~                | a command that stands for some text             |
@@ -597,6 +652,7 @@ bjo run tests/read.bjo      ;; 42 checks: the reader on its own
 bjo run tests/expand.bjo    ;; 76 checks: commands, paragraphs, typography, refusals
 bjo run tests/html.bjo      ;; 47 checks: the HTML converter, highlighting, the writer
 bjo run tests/markdown.bjo  ;; 15 checks: Markdown, translated
+bjo run tests/apidocs.bjo   ;; 20 checks: Bjolang modules' docs
 #+END_SRC
 
 ~markdown~ reads @markdown and @include-markdown into samizdat's tree: every

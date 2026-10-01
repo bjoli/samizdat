@@ -1,0 +1,385 @@
+;; This Source Code Form is subject to the terms of the Mozilla Public
+;; License, v. 2.0. If a copy of the MPL was not distributed with this
+;; file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+;; samizdat/src/apidocs.bjo — the module (samizdat apidocs).
+;;
+;; Bjolang modules' own documentation, shown in a document:
+;;
+;;     @defmodule[(std random)]{...}   the module's doc, and the module the
+;;                                     commands below mean from here on
+;;     @defdoc[random-int]{...}        one definition's doc, and more text
+;;     @defdocs                        every definition's doc, in the module's order
+;;     @docref[random-int]{...}        a link to a definition shown in the document
+;;
+;; The docs are what the compiler published in the module's dll, read with
+;; (janitor docs) while the document is expanded, so a page says what the
+;; module it describes was compiled with. The dll is one of the document's
+;; sources: rebuilding the module makes a kept page stale.
+;;
+;; A module is a name, found as the compiler finds it — the installed library,
+;; and the packages of the nearest .bjo/roots above the document — or a string,
+;; the path of a module's source relative to the document, whose dll is beside
+;; it.
+
+(export defmodule defdoc defdocs docref)
+
+(import (std prelude))
+(import (text bjodat-core))
+(import (janitor modules))
+(import (janitor docs))
+(import (samizdat read))
+(import (samizdat doc))
+(import (samizdat expand))
+
+(import/extern
+  (directory-name (: System.IO.Path.GetDirectoryName (-> string string)))
+  (null-or-empty? (: System.String.IsNullOrEmpty (-> string bool)))
+  (change-extension (: System.IO.Path.ChangeExtension (-> string string string)))
+  (file-stem (: System.IO.Path.GetFileNameWithoutExtension (-> string string))))
+
+;; ---------------------------------------------------------------------------
+;; Which module
+;; ---------------------------------------------------------------------------
+
+;; A module as the commands know it: its dll, what a message calls it, and
+;; what its definitions' ids begin with.
+(type (: ApiModule (Record (: dll string)
+                           (: shown string)
+                           (: prefix string))))
+
+;; The roots file of the project the document is in: the nearest .bjo/roots
+;; above it.
+(: roots-above (-> string (Option string)))
+(defun (roots-above dir)
+  (def candidate (path-combine dir ".bjo" "roots"))
+  (if (file-exists? candidate)
+      (Some candidate)
+      (let ((up (directory-name dir)))
+        (if (null-or-empty? up) None (roots-above up)))))
+
+(: roots-for (-> Ctx Call (List PackageRoot)))
+(defun (roots-for cx c)
+  (def here (path-absolute (relative-path cx ".")))
+  (match (roots-above here)
+    (None (standard-roots))
+    ((Some file)
+     (match (read-roots-file file)
+       ((Err why) (refuse cx c why))
+       ((Ok roots) (list-append (standard-roots) roots))))))
+
+(: symbols-of (-> (List Bjodat) (Option (List Symbol))))
+(defun (symbols-of xs)
+  (match xs
+    (Nil (Some Nil))
+    ((Cons (BjoSym s) rest)
+     (match (symbols-of rest)
+       ((Some more) (Some (Cons s more)))
+       (None None)))
+    (_ None)))
+
+;; `(std random)`, or "lib/thing.bjo" relative to the document.
+(: module-of (-> Ctx Call Bjodat ApiModule))
+(defun (module-of cx c written)
+  (match written
+    ((BjoStr path)
+     (def source (path-absolute (relative-path cx path)))
+     (ApiModule (dll (change-extension source ".dll"))
+                (shown path)
+                (prefix (file-stem source))))
+    ((BjoList parts)
+     (match (symbols-of parts)
+       ((Some (Cons first rest))
+        (def name (Cons first rest))
+        (match (find-module-assembly (roots-for cx c) name)
+          ((Err why) (refuse cx c why))
+          ((Ok dll)
+           (ApiModule (dll dll)
+                      (shown (module-name->string name))
+                      (prefix (string-join (list->vec (list-map symbol->string name)) " "))))))
+       (_ (refuse cx c (str "a module is a name, (std random), or the path of its source, and not "
+                            (bjodat->string written))))))
+    (_ (refuse cx c (str "a module is a name, (std random), or the path of its source, and not "
+                         (bjodat->string written))))))
+
+(: current-key string)
+(def current-key "defmodule:current")
+
+;; The module a command means: its #:module, or the one @defmodule last named.
+(: module-for (-> Ctx Call ApiModule))
+(defun (module-for cx c)
+  (match (keyword c "module")
+    ((Some written) (module-of cx c written))
+    (None
+     (match (state-ref cx current-key)
+       ((Some written) (module-of cx c written))
+       (None (refuse cx c "names no module: write @defmodule[(the module)] before it, or give it #:module"))))))
+
+;; ---------------------------------------------------------------------------
+;; The docs
+;; ---------------------------------------------------------------------------
+
+;; Read once per build of a dll: a manual shows many definitions of a module.
+(: read-cache (Box (Map string (Tuple long (Vec Doc)))))
+(def read-cache (make-box (map-empty)))
+
+(: modified-ms (-> string long))
+(defun (modified-ms path)
+  (match (file-info path)
+    ((Some info) (record-ref info modified-ms))
+    (None (cast long 0))))
+
+(: docs-of (-> Ctx Call ApiModule (Vec Doc)))
+(defun (docs-of cx c m)
+  (def dll (record-ref m dll))
+  (unless (file-exists? dll)
+    (refuse cx c (str (record-ref m shown) " is not compiled: there is no " dll)))
+  (add-source! cx dll)
+  (def stamp (modified-ms dll))
+  (def cached (match (map-try-ref (box-ref read-cache) dll)
+                ((Some (Tuple at docs)) (if (= at stamp) (Some docs) None))
+                (None None)))
+  (match cached
+    ((Some docs) docs)
+    (None
+     (match (assembly-docs dll)
+       ((Err why) (refuse cx c why))
+       ((Ok docs)
+        (box-set! read-cache (map-set (box-ref read-cache) dll (Tuple stamp docs)))
+        docs)))))
+
+;; A definition's name as written in a command: a symbol, or a string, which
+;; is how a reader extension is named: "#pair".
+(: name-arg (-> Ctx Call string))
+(defun (name-arg cx c)
+  (when (< (arg-count c) 1) (refuse cx c "needs the name of a definition in its [...]"))
+  (arg-string cx c 0))
+
+(: doc-of (-> Ctx Call ApiModule string Doc))
+(defun (doc-of cx c m name)
+  (match (doc-named (docs-of cx c m) name)
+    ((Some d) d)
+    (None (refuse cx c (str (record-ref m shown) " has no doc for " name)))))
+
+;; Where a shown definition's id is kept, so that @docref finds it.
+(: shown-key (-> ApiModule string string))
+(defun (shown-key m name) (str "defdoc:" (record-ref m dll) " " name))
+
+;; ---------------------------------------------------------------------------
+;; Text in a doc
+;; ---------------------------------------------------------------------------
+;; A doc's texts are samizdat markup, expanded with the document's commands.
+
+(: markup-items (-> Ctx Call string (Vec At)))
+(defun (markup-items cx c text)
+  (match (read-source text #:name (str (ctx-source cx) ": a doc"))
+    ((Err why) (refuse cx c why))
+    ((Ok src) (record-ref src content))))
+
+(: markup-inlines (-> Ctx Call string (Vec Inline)))
+(defun (markup-inlines cx c text) (items->inlines cx c (markup-items cx c text)))
+
+(: markup-blocks (-> Ctx Call string (Vec Block)))
+(defun (markup-blocks cx c text) (items->blocks cx (markup-items cx c text)))
+
+;; ---------------------------------------------------------------------------
+;; A doc, as blocks
+;; ---------------------------------------------------------------------------
+
+(: kind-name (-> DocKind string))
+(defun (kind-name k)
+  (match k
+    (KindFunction "function")
+    (KindValue "value")
+    (KindRecord "record")
+    (KindUnion "union")
+    (KindAlias "type alias")
+    (KindTrait "trait")
+    (KindMacro "macro")
+    (KindReader "reader extension")
+    (KindModule "module")
+    ((KindOther s) (symbol->string s))))
+
+;; How a macro is written, and a reader extension: (pair a b) is #pair(a b).
+(: form-text (-> Doc Bjodat string))
+(defun (form-text d form)
+  (match (Tuple (record-ref d subject) form)
+    ((Tuple (SubjectReader _) (BjoList (Cons (BjoSym head) args)))
+     (str "#" (symbol->string head) "("
+          (string-join (list->vec (list-map bjodat->string args)) " ") ")"))
+    (_ (bjodat->string form))))
+
+;; The code at the head of a doc: the type and the definition's head, or the
+;; forms a macro is written in.
+(: code-of (-> Doc string))
+(defun (code-of d)
+  (def name (doc-subject->string (record-ref d subject)))
+  (def signature (match (record-ref d signature)
+                   ((Some s) [(str "(: " name " " s ")")])
+                   (None [])))
+  (def definition (match (record-ref d definition)
+                    ((Some s) [s])
+                    (None [])))
+  (def forms (loop (:for cl (record-ref d clauses))
+                   (:acc out (folding (vec-empty)
+                                      (match cl
+                                        ((DocForm f) (vec-add out (form-text d f)))
+                                        (_ out))))))
+  (string-join (vec-merge (vec-merge signature definition) forms) "\n"))
+
+(: sym-code (-> Symbol Inline))
+(defun (sym-code s) (Code (symbol->string s)))
+
+;; The term a clause is listed under, when it is one that is.
+(: term-of (-> DocClause (Option (Tuple (Vec Inline) string))))
+(defun (term-of cl)
+  (match cl
+    ((DocArg n t) (Some (Tuple [(sym-code n)] t)))
+    ((DocRest n t) (Some (Tuple [(Code (str (symbol->string n) " ..."))] t)))
+    ((DocKey n t) (Some (Tuple [(Code (str "#:" (symbol->string n)))] t)))
+    ((DocField n t) (Some (Tuple [(sym-code n)] t)))
+    ((DocCase n t) (Some (Tuple [(sym-code n)] t)))
+    ((DocTparam n t) (Some (Tuple [(sym-code n)] t)))
+    ((DocReturns t) (Some (Tuple [(Emph [(Str "returns")])] t)))
+    ((DocRaises ty t) (Some (Tuple [(Emph [(Str "raises")]) (Str " ") (sym-code ty)] t)))
+    (_ None)))
+
+;; `name`, linked when the document shows it.
+(: see-inline (-> Ctx ApiModule Symbol Document (Vec Inline)))
+(defun (see-inline cx m name doc)
+  (match (state-ref cx (shown-key m (symbol->string name)))
+    ((Some (BjoStr id)) [(Link (str "#" id) [(sym-code name)])])
+    (_ [(sym-code name)])))
+
+(: see-para (-> Ctx ApiModule (List Symbol) (Vec Piece)))
+(defun (see-para cx m names)
+  (vec-merge
+    (inline (Str "See also: "))
+    (defer-inlines cx (fun (doc)
+                        (loop (:with first #t #f)
+                              (:for n names)
+                              (:acc out (folding (vec-empty)
+                                                 (vec-merge (if first out (vec-add out (Str ", ")))
+                                                            (see-inline cx m n doc)))))))))
+
+;; The body of a doc: summary, terms, examples, the long text, related names.
+(: doc-blocks (-> Ctx Call ApiModule Doc (Vec Block)))
+(defun (doc-blocks cx c m d)
+  (def clauses (record-ref d clauses))
+  (def summary (loop (:for cl clauses)
+                     (:acc out (folding (vec-empty)
+                                        (match cl
+                                          ((DocSummary t) (vec-add out (Para (markup-inlines cx c t))))
+                                          (_ out))))))
+  (def terms (loop (:for cl clauses)
+                   (:acc out (folding (vec-empty)
+                                      (match (term-of cl)
+                                        ((Some (Tuple term text))
+                                         (vec-add out (Tuple term [(markup-blocks cx c text)])))
+                                        (None out))))))
+  (def literals (loop (:for cl clauses)
+                      (:acc out (folding (vec-empty)
+                                         (match cl
+                                           ((DocLiteral ns)
+                                            (vec-add out (Para (vec-merge [(Str "Literally: ")]
+                                                                          (list->vec (list-map sym-code ns))))))
+                                           (_ out))))))
+  (def rest (loop (:for cl clauses)
+                  (:acc out (folding (vec-empty)
+                                     (match cl
+                                       ((DocExample t) (vec-add out (CodeBlock "bjolang" t)))
+                                       ((DocReference t) (vec-merge out (markup-blocks cx c t)))
+                                       (_ out))))))
+  (def see (loop (:for cl clauses)
+                 (:acc out (folding (vec-empty)
+                                    (match cl
+                                      ((DocSee ns) (vec-add out (items->see cx m ns)))
+                                      (_ out))))))
+  (vec-merge (vec-merge (vec-merge summary (if (vec-empty? terms) [] [(DefinitionList terms)]))
+                        (vec-merge literals rest))
+             see))
+
+(: items->see (-> Ctx ApiModule (List Symbol) Block))
+(defun (items->see cx m ns)
+  (Para (vec-map (fun (p)
+                   (match p
+                     ((PInline x) x)
+                     ((PBlock _) (Str ""))))
+                 (see-para cx m ns))))
+
+;; One definition: a heading to link to, what kind it is, its code, its doc,
+;; and what the document adds.
+(: entry-blocks (-> Ctx Call ApiModule Doc int (Vec Block) Block))
+(defun (entry-blocks cx c m d level extra)
+  (def name (doc-subject->string (record-ref d subject)))
+  (def key (shown-key m name))
+  (match (state-ref cx key)
+    ((Some _) (refuse cx c (str name " of " (record-ref m shown) " is shown twice in this document")))
+    (None unit))
+  (def id (unique-id! cx (str (record-ref m prefix) " " (string-replace name "#" "reader "))))
+  (state-set! cx key (BjoStr id))
+  (def code (code-of d))
+  (Div "doc-entry"
+       (vec-merge (vec-merge [(Heading level id [(Code name)])
+                              (Para [(Span "doc-kind" [(Str (kind-name (record-ref d kind)))])])]
+                             (if (string-empty? code) [] [(CodeBlock "bjolang" code)]))
+                  (vec-merge (doc-blocks cx c m d) extra))))
+
+;; ---------------------------------------------------------------------------
+;; The commands
+;; ---------------------------------------------------------------------------
+
+;; @defmodule[(std random)]{...}: the module's own doc, then the body; and the
+;; module @defdoc, @defdocs and @docref mean from here on.
+(: defmodule (-> Ctx Call (Vec Piece)))
+(defun (defmodule cx c)
+  (check-keywords! cx c (vec-empty))
+  (unless (= (arg-count c) 1)
+    (refuse cx c "takes one module: @defmodule[(std random)], or the path of its source"))
+  (def written (vec-ref (positional c) 0))
+  (def m (module-of cx c written))
+  (state-set! cx current-key written)
+  (def own (match (module-doc (docs-of cx c m))
+             ((Some d) (doc-blocks cx c m d))
+             (None (vec-empty))))
+  (block (Div "doc-module" (vec-merge own (expand-blocks cx c)))))
+
+;; @defdoc[random-int]{...}: that definition's doc, then the body. #:module
+;; names another module than @defmodule's; #:level the heading's level, 4
+;; unless it says, so that a table of contents of sections leaves it out.
+(: defdoc (-> Ctx Call (Vec Piece)))
+(defun (defdoc cx c)
+  (check-keywords! cx c ["module" "level"])
+  (def m (module-for cx c))
+  (def d (doc-of cx c m (name-arg cx c)))
+  (block (entry-blocks cx c m d (kw-int-or cx c "level" 4) (expand-blocks cx c))))
+
+;; @defdocs: every definition's doc, in the order the module wrote them.
+(: defdocs (-> Ctx Call (Vec Piece)))
+(defun (defdocs cx c)
+  (check-keywords! cx c ["module" "level"])
+  (when (> (arg-count c) 0) (refuse cx c "takes no arguments; the module is #:module"))
+  (when (has-body? c) (refuse cx c "takes no body; write @defdoc for one with text of its own"))
+  (def m (module-for cx c))
+  (def level (kw-int-or cx c "level" 4))
+  (loop (:for d (docs-of cx c m))
+        (:acc out (folding (vec-empty)
+                           (match (record-ref d subject)
+                             (SubjectModule out)
+                             (_ (vec-merge out (block (entry-blocks cx c m d level (vec-empty))))))))))
+
+;; @docref[random-int], or @docref[random-int]{text}: a link to the definition
+;; where the document shows it, before or after. A name the module has no doc
+;; for is refused, and so is one the document never shows.
+(: docref (-> Ctx Call (Vec Piece)))
+(defun (docref cx c)
+  (check-keywords! cx c ["module"])
+  (def m (module-for cx c))
+  (def name (name-arg cx c))
+  (ignore (doc-of cx c m name))
+  (def text (if (has-body? c) (expand-inlines cx c) [(Code name)]))
+  (defer-inlines cx (fun (doc)
+                      (match (state-ref cx (shown-key m name))
+                        ((Some (BjoStr id)) [(Link (str "#" id) text)])
+                        (_ (refuse cx c (str name " of " (record-ref m shown)
+                                             " is not shown in this document: @defdoc it")))))))

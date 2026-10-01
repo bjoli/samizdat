@@ -37,14 +37,14 @@
   ;; Answering once the document is finished: a table of contents, a reference.
   defer-blocks defer-inlines
   ;; Other files, relative to the document being expanded.
-  include-file relative-path read-relative
+  include-file relative-path read-relative add-source!
   ;; The arguments.
   positional keyword arg-count arg-string arg-string-or
   kw-string-or kw-int-or kw-bool-or kw-symbol-or check-keywords!
   ;; Refusing. Not called `fail`, which `(std simpletest)` has.
   refuse
   ;; The document's state.
-  add-note! unique-id! ctx-source
+  add-note! unique-id! ctx-source state-ref state-set!
   ;; Commands made from less.
   text-command
   ;; What the typography pass does, on its own.
@@ -87,7 +87,10 @@
                           (: depth int #:mutable)
                           (: later (Vec (Tuple string Later)) #:mutable)
                           ;; Every file read for the document, in order.
-                          (: sources (Vec string) #:mutable))))
+                          (: sources (Vec string) #:mutable)
+                          ;; What commands keep for the rest of the document,
+                          ;; by a key each command chooses.
+                          (: state (Map string Bjodat) #:mutable))))
 
 (: ctx-source (-> Ctx string))
 (defun (ctx-source cx) (record-ref cx source))
@@ -466,6 +469,16 @@
   (record-set! cx (notes (vec-set (record-ref cx notes) slot (Some blocks))))
   (+ slot 1))
 
+;; What a command kept under `key` for the rest of the document: the module
+;; @defmodule made current, say. Keys are the commands' own, so a command
+;; prefixes them with its name.
+(: state-ref (-> Ctx string (Option Bjodat)))
+(defun (state-ref cx key) (map-try-ref (record-ref cx state) key))
+
+(: state-set! (-> Ctx string Bjodat void))
+(defun (state-set! cx key value)
+  (record-set! cx (state (map-set (record-ref cx state) key value))))
+
 ;; An id made from `text`, which no other call has answered: "The Defaults"
 ;; is "the-defaults", and the second one "the-defaults-2".
 (: unique-id! (-> Ctx string string))
@@ -622,9 +635,16 @@
 (defun (read-relative cx c path)
   (def full (relative-path cx path))
   (unless (file-exists? full) (refuse cx c (str "there is no file " full)))
-  (unless (vec-contains (record-ref cx sources) full)
-    (record-set! cx (sources (vec-add (record-ref cx sources) full))))
+  (add-source! cx full)
   (file-read-text full))
+
+;; Records that the document was made from `file`, as a command that reads a
+;; file other than with `read-relative` has to, so that what keeps the output
+;; knows to make it again when the file changes.
+(: add-source! (-> Ctx string void))
+(defun (add-source! cx file)
+  (unless (vec-contains (record-ref cx sources) file)
+    (record-set! cx (sources (vec-add (record-ref cx sources) file)))))
 
 ;; The document at `path`, expanded where the command is, as if its text were
 ;; written there. It shares the document's footnotes and heading ids. It may
@@ -735,7 +755,8 @@
               (Result string Document)))
 (defun (expand src commands #:name "input" #:typography #t)
   (def cx (Ctx (commands commands) (source name) (including [name]) (notes (vec-empty))
-               (ids (map-empty)) (depth 0) (later (vec-empty)) (sources (vec-empty))))
+               (ids (map-empty)) (depth 0) (later (vec-empty)) (sources (vec-empty))
+               (state (map-empty))))
   (match (try (finish cx src) #:catch (System.IO.InvalidDataException))
     ((Err e) (Err (.-Message e)))
     ((Ok doc)
