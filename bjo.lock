@@ -6,6 +6,6 @@
     (package (name (markdig-bjolang)) (version "0.2.0")
              (source (git (url "https://github.com/bjoli/markdig-bjolang")))
              (commit "81cb27667677237c96525a2fee9e65fa76cb0532"))
-    (package (name (textmate-bjolang)) (version "0.1.0")
+    (package (name (textmate-bjolang)) (version "0.1.2")
              (source (git (url "https://rikspucko.koketteriet.se/bjoli/textmate-bjolang")))
-             (commit "c499691376c77bbc0fbeede2f31c008071ce412a4a538090ddc810da45a78256"))))
+             (commit "eeb113389acc0f3464b6c57aff180a684c0db56d9cdbaac1d9ddece71da30a7f"))))

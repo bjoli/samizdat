@@ -72,7 +72,7 @@
 (re-export Node xml-text)
 
 (import (std prelude))
-(import (only (std set) list->set set-contains?))
+(import (only (std hashset) list->hashset hashset-contains?))
 (import (only (text xml) xml-name xml-name-local xml-name-ns xml-element xml-text element-view
               text? text-value comment? comment-value text-content))
 (import (only (textmate-bjolang core) code->node))
@@ -495,15 +495,15 @@
 ;; ---------------------------------------------------------------------------
 
 ;; Elements with no end tag, and no children.
-(: void-elements (Set string))
+(: void-elements (HashSet string))
 (def void-elements
-  (list->set (list "area" "base" "br" "col" "embed" "hr" "img" "input" "link" "meta" "source" "track" "wbr")))
+  (list->hashset (list "area" "base" "br" "col" "embed" "hr" "img" "input" "link" "meta" "source" "track" "wbr")))
 
 ;; Elements that go on lines of their own when they stand among blocks. Not
 ;; <figcaption>, <td> or <th>, which stay on the line of what holds them.
-(: block-elements (Set string))
+(: block-elements (HashSet string))
 (def block-elements
-  (list->set (list "address" "article" "aside" "blockquote" "body" "caption" "dd" "details" "dialog"
+  (list->hashset (list "address" "article" "aside" "blockquote" "body" "caption" "dd" "details" "dialog"
                    "div" "dl" "dt" "fieldset" "figure" "footer" "form" "h1" "h2" "h3" "h4" "h5" "h6"
                    "head" "header" "hgroup" "hr" "html" "li" "link" "main" "menu" "meta" "nav" "ol"
                    "p" "pre" "script" "search" "section" "style" "summary" "table" "tbody" "tfoot"
@@ -511,16 +511,16 @@
 
 ;; Attributes that mean something by being there, written bare when their
 ;; value is empty or their own name.
-(: boolean-attributes (Set string))
+(: boolean-attributes (HashSet string))
 (def boolean-attributes
-  (list->set (list "allowfullscreen" "async" "autofocus" "autoplay" "checked" "controls" "default"
+  (list->hashset (list "allowfullscreen" "async" "autofocus" "autoplay" "checked" "controls" "default"
                    "defer" "disabled" "formnovalidate" "hidden" "inert" "ismap" "itemscope" "loop"
                    "multiple" "muted" "nomodule" "novalidate" "open" "playsinline" "readonly"
                    "required" "reversed" "selected")))
 
 ;; Elements whose text is not HTML, and is written unescaped.
-(: raw-text-elements (Set string))
-(def raw-text-elements (list->set (list "script" "style")))
+(: raw-text-elements (HashSet string))
+(def raw-text-elements (list->hashset (list "script" "style")))
 
 (: raw-marker? (-> XmlName bool))
 (defun (raw-marker? name) (= (xml-name-ns name) raw-namespace))
@@ -531,7 +531,7 @@
     ((Some (Tuple name attrs kids))
      (if (raw-marker? name)
          (= name raw-block-tag)
-         (set-contains? block-elements (string-downcase (xml-name-local name)))))
+         (hashset-contains? block-elements (string-downcase (xml-name-local name)))))
     (None #f)))
 
 ;; Text that is "", and raw HTML with none in it, write nothing, and must not
@@ -553,7 +553,7 @@
          (def name (xml-name-local k))
          (stringbuilder-add-string! sb " ")
          (stringbuilder-add-string! sb name)
-         (unless (and (set-contains? boolean-attributes name) (or (string-empty? v) (= v name)))
+         (unless (and (hashset-contains? boolean-attributes name) (or (string-empty? v) (= v name)))
            (stringbuilder-add-string! sb "=\"")
            (stringbuilder-add-string! sb (escape-attribute v))
            (stringbuilder-add-string! sb "\"")))))
@@ -570,8 +570,8 @@
            (stringbuilder-add-string! sb local)
            (write-attributes! sb attrs)
            (stringbuilder-add-string! sb ">")
-           (unless (set-contains? void-elements (string-downcase local))
-             (if (set-contains? raw-text-elements (string-downcase local))
+           (unless (hashset-contains? void-elements (string-downcase local))
+             (if (hashset-contains? raw-text-elements (string-downcase local))
                  (stringbuilder-add-string! sb (text-content n))
                  (write-children! sb kids #t (or pre? (= (string-downcase local) "pre"))))
              (stringbuilder-add-string! sb "</")
