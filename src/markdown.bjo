@@ -72,7 +72,7 @@
   (if (and (string-starts-with? t token-open)
            (string-ends-with? t token-close)
            (= (vec-length (string-split t token-open)) 2))
-      (Some (string->int (.Substring t 1 (- (string-length t) 2))))
+      (Some (string->int (.Substring t 1 (- (.-Length t) 2))))
       None))
 
 ;; ---------------------------------------------------------------------------

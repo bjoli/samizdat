@@ -189,7 +189,7 @@
           (fun (o items c) (str (char->string o) (concat items) (char->string c)))))
 
 (: inside (-> string string))
-(defun (inside s) (.Substring s 1 (- (string-length s) 2)))
+(defun (inside s) (.Substring s 1 (- (.-Length s) 2)))
 
 ;; bjodat says where in the brackets' contents it stopped, "line 1, column 8:
 ;; ...", and this says where that is in the document. `at` is the `[`.
@@ -502,7 +502,7 @@
   (if (vec-empty? line)
       0
       (match (vec-ref line 0)
-        ((Text s) (- (string-length s) (string-length (string-trim-start s))))
+        ((Text s) (- (.-Length s) (.-Length (string-trim-start s))))
         ((Cmd c) 0))))
 
 (: outdent (-> (Vec At) int (Vec At)))

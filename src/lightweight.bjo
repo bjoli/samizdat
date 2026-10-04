@@ -346,7 +346,7 @@
 (: cookie (-> string (Option Align)))
 (defun (cookie s)
   (if (and (>= (string-length s) 2) (string-starts-with? s "<") (string-ends-with? s ">"))
-      (let* ((inner (string-downcase (.Substring s 1 (- (string-length s) 2))))
+      (let* ((inner (string-downcase (.Substring s 1 (- (.-Length s) 2))))
              (letter (if (string-empty? inner) "" (.Substring inner 0 1)))
              (lettered (or (= letter "l") (= letter "c") (= letter "r")))
              (width (if lettered (.Substring inner 1) inner)))
@@ -422,7 +422,7 @@
 (defun (number-text? s)
   (def t0 (string-trim s))
   (def t1 (if (or (string-starts-with? t0 "-") (string-starts-with? t0 "+")) (.Substring t0 1) t0))
-  (def t2 (if (string-ends-with? t1 "%") (.Substring t1 0 (- (string-length t1) 1)) t1))
+  (def t2 (if (string-ends-with? t1 "%") (.Substring t1 0 (- (.-Length t1) 1)) t1))
   (and (string-fold (fun (ch ok) (and ok (or (char-numeric? ch) (char=? ch #\.) (char=? ch #\,)))) #t t2)
        (string-fold (fun (ch any) (or any (char-numeric? ch))) #f t2)))
 
