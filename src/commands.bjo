@@ -199,7 +199,7 @@
     (cond
       ((string-empty? file) (body-text cx c))
       ((has-body? c) (refuse cx c "takes its code from #:file or from its body, not both"))
-      (else (string-trim-end (string-replace (read-relative cx c file) "\r\n" "\n")))))
+      (else (string-trim-right (string-replace (read-relative cx c file) "\r\n" "\n")))))
   (block (CodeBlock (kw-string-or cx c "lang" "") text)))
 
 (: blockquote (-> Ctx Call (Vec Piece)))

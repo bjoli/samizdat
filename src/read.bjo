@@ -502,7 +502,7 @@
   (if (vec-empty? line)
       0
       (match (vec-ref line 0)
-        ((Text s) (- (.-Length s) (.-Length (string-trim-start s))))
+        ((Text s) (- (.-Length s) (.-Length (string-trim-left s))))
         ((Cmd c) 0))))
 
 (: outdent (-> (Vec At) int (Vec At)))

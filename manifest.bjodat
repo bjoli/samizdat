@@ -9,7 +9,7 @@
   ;; source wins.
   (depends
     (package (name (bjorsec))
-             (version (version-at-least "0.2.0"))
+             (version (version-at-least "0.2.1"))
              (source (git (url "https://github.com/bjoli/bjorsec"))))
     ;; @markdown. It brings Markdig as a NuGet package, so building anything
     ;; with samizdat needs the .NET SDK's dotnet command.

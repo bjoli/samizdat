@@ -45,39 +45,46 @@
                      (: Bullet int bool (Vec At))
                      (: Plain int (Vec At)))))
 
-(: digits-from (-> string int int))
-(defun (digits-from s i)
-  (if (and (< i (string-length s))
-           (>= (string-code-ref s i) 48)
-           (<= (string-code-ref s i) 57))
-      (digits-from s (+ i 1))
-      i))
+;; How many ASCII digits start at `c`, and the cursor after them.
+(: digits-from (-> string StringCursor int (Tuple int StringCursor)))
+(defun (digits-from s c n)
+  (if (and (not (string-cursor-end? s c))
+           (let ((ch (string-cursor-ref s c)))
+             (and (char>=? ch #\0) (char<=? ch #\9))))
+      (digits-from s (string-cursor-next s c) (+ n 1))
+      (Tuple n c)))
+
+;; Is the character at `c` a space? False at the end.
+(: space-at? (-> string StringCursor bool))
+(defun (space-at? s c)
+  (and (not (string-cursor-end? s c)) (char=? (string-cursor-ref s c) #\space)))
 
 ;; The marker at the start of `s`, if there is one: its length, the space
 ;; after it included, and whether it numbers. A marker at the very end of the
 ;; text counts, since a command may come right after it: `- @em{x}` is read as
-;; the text "- " and a command.
+;; the text "- " and a command. A marker is ASCII, so its length is the same
+;; in characters, bytes and UTF-16 units.
 (: marker (-> string (Option (Tuple int bool))))
 (defun (marker s)
-  (def n (string-length s))
-  (def first (if (> n 0) (string-code-ref s 0) 0))
-  (cond
-    ((= n 0) None)
-    ;; - + *
-    ((or (= first 45) (= first 43) (= first 42))
-     (cond
-       ((= n 1) (Some (Tuple 1 #f)))
-       ((= (string-code-ref s 1) 32) (Some (Tuple 2 #f)))
-       (else None)))
-    (else
-     (def d (digits-from s 0))
-     (cond
-       ((or (= d 0) (> d 9) (>= d n)) None)
-       ;; . )
-       ((not (or (= (string-code-ref s d) 46) (= (string-code-ref s d) 41))) None)
-       ((= (+ d 1) n) (Some (Tuple (+ d 1) #t)))
-       ((= (string-code-ref s (+ d 1)) 32) (Some (Tuple (+ d 2) #t)))
-       (else None)))))
+  (def start (string-cursor-start s))
+  (if (string-cursor-end? s start)
+      None
+      (let ((first (string-cursor-ref s start))
+            (after (string-cursor-next s start)))
+        (cond
+          ((or (char=? first #\-) (char=? first #\+) (char=? first #\*))
+           (cond
+             ((string-cursor-end? s after) (Some (Tuple 1 #f)))
+             ((space-at? s after) (Some (Tuple 2 #f)))
+             (else None)))
+          (else
+           (def (Tuple d c) (digits-from s start 0))
+           (cond
+             ((or (= d 0) (> d 9) (string-cursor-end? s c)) None)
+             ((not (or (char=? (string-cursor-ref s c) #\.) (char=? (string-cursor-ref s c) #\)))) None)
+             ((string-cursor-end? s (string-cursor-next s c)) (Some (Tuple (+ d 1) #t)))
+             ((space-at? s (string-cursor-next s c)) (Some (Tuple (+ d 2) #t)))
+             (else None)))))))
 
 (: with-first-text (-> (Vec At) string (Vec At)))
 (defun (with-first-text line s)
@@ -94,7 +101,7 @@
          (def rest (.Substring s k))
          (match (marker rest)
            ((Some (Tuple len numbered))
-            (Bullet k numbered (with-first-text line (string-trim-start (.Substring rest len)))))
+            (Bullet k numbered (with-first-text line (string-trim-left (.Substring rest len)))))
            (None (Plain k (with-first-text line rest))))))))
 
 (: line-indent (-> Line int))
@@ -317,15 +324,15 @@
   (def start (if (vec-empty? cell)
                  cell
                  (match (vec-ref cell 0)
-                   ((Text s) (with-first-text cell (string-trim-start s)))
+                   ((Text s) (with-first-text cell (string-trim-left s)))
                    ((Cmd c) cell))))
   (if (vec-empty? start)
       start
       (let ((last (- (vec-length start) 1)))
         (match (vec-ref start last)
-          ((Text s) (if (string-empty? (string-trim-end s))
+          ((Text s) (if (string-empty? (string-trim-right s))
                         (vec-remove-at start last)
-                        (vec-set start last (Text (string-trim-end s)))))
+                        (vec-set start last (Text (string-trim-right s)))))
           ((Cmd c) start)))))
 
 ;; The cells of a row. What is before its first `|` is not a cell, and neither
@@ -384,7 +391,7 @@
       (match (vec-ref line 0)
         ((Cmd c) (StrayLine line))
         ((Text s)
-         (def rest (string-trim-start s))
+         (def rest (string-trim-left s))
          (cond
            ((string-starts-with? (string-upcase rest) "#+CAPTION:")
             (CaptionLine (trim-cell (with-first-text line (.Substring rest 10)))))

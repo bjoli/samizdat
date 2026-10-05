@@ -293,7 +293,7 @@
       xs
       (match (vec-ref xs 0)
         ((Str s)
-         (def t (string-trim-start s))
+         (def t (string-trim-left s))
          (if (string-empty? t) (trim-start (vec-remove-at xs 0)) (vec-set xs 0 (Str t))))
         (_ xs))))
 
@@ -304,7 +304,7 @@
       (let ((last (- (vec-length xs) 1)))
         (match (vec-ref xs last)
           ((Str s)
-           (def t (string-trim-end s))
+           (def t (string-trim-right s))
            (if (string-empty? t) (trim-end (vec-remove-at xs last)) (vec-set xs last (Str t))))
           (_ xs)))))
 
