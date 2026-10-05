@@ -18,7 +18,8 @@ part.@note{See @link["https://www.rfc-editor.org/rfc/rfc6265"]{RFC 6265}.}
 #+END_SRC
 
 — into a tree that says what the document is and nothing about how it looks,
-which a converter then prints. HTML is the converter that comes with it.
+which a converter then prints. HTML and Markdown are the converters that come
+with it.
 
 A command is a Bjolang function, and a table of them is a map from names to
 functions. A blog that wants ~@youtube~ writes one and merges it over the
@@ -30,7 +31,7 @@ puts them somewhere else.
 
 Files are called ~.sz~.
 
-** The eight modules
+** The nine modules
 
 | ~(samizdat read)~        | the reader: text to ~At~ items, text or commands, on bjorsec |
 | ~(samizdat doc)~         | the document: ~Block~, ~Inline~, ~Document~; a printer to s-expressions |
@@ -40,6 +41,7 @@ Files are called ~.sz~.
 | ~(samizdat markdown)~    | ~@markdown~ and ~@include-markdown~, through markdig-bjolang   |
 | ~(samizdat apidocs)~     | Bjolang modules' own docs: ~@generate-docs~, ~@defmodule~, ~@defdoc~, ~@defdocs~, ~@docref~ |
 | ~(samizdat html)~        | a ~Document~ as HTML: ~(text xml)~ nodes, and a writer for them; code highlighted through textmate-bjolang |
+| ~(samizdat gfm)~         | a ~Document~ as GitHub Flavored Markdown, for docs read in a repository |
 
 ** Using it
 
@@ -64,6 +66,13 @@ page around the result.
 
 #+BEGIN_SRC sh
 bjo run examples/render.bjo examples/post.sz     # writes examples/post.html
+#+END_SRC
+
+~examples/markdown.bjo~ writes a document as Markdown, for docs kept in a
+repository and read on GitHub:
+
+#+BEGIN_SRC sh
+bjo run examples/markdown.bjo docs/index.sz      # writes docs/index.md
 #+END_SRC
 
 ** The syntax
@@ -603,6 +612,67 @@ id in the document, and gets ~#:id-prefix~ as the id does. A list item that is
 one paragraph, and perhaps lists after it, is written without a ~<p>~, as a
 Markdown renderer writes a short list.
 
+*** The Markdown one
+
+~(samizdat gfm)~ writes a ~Document~ as GitHub Flavored Markdown: a README, or
+the pages of a ~docs/~ directory, which GitHub shows as they are.
+
+| ~(document->markdown doc)~             | the blocks, then the footnotes                 |
+| ~(markdown-page doc #:title)~          | the same under a ~#~ heading, the title or the meta form's, and a newline: a file |
+| ~(markdown-options ...)~               | what ~#:with~ takes, for either                 |
+| ~(blocks->markdown h bs)~ ~(inlines->markdown h xs)~ | part of a document, for a hook    |
+| ~(escape-markdown s)~                  | text, escaped to be shown as it is             |
+| ~(github-slug s)~                      | the id GitHub gives a heading with that text   |
+
+#+BEGIN_SRC scheme
+(import (samizdat gfm))
+
+(file-write-text "docs/index.md" (markdown-page doc))
+#+END_SRC
+
+What Markdown has, a document is written as: emphasis, code, links, images,
+lists, task lists, quotations, fenced code, tables and footnotes. What it has
+not is HTML, which GitHub shows: ~<sup>~ and ~<sub>~, and a definition list as
+a ~<dl>~ whose definitions are Markdown again, between blank lines. A figure is
+its image with the caption in emphasis below it, and so is a table's caption
+above it. A table has the one head row and the one body Markdown's have: rows
+of the head after the first begin the body, groups are put together, and a
+table without a head is given an empty one. ~Span~ and ~Div~ are what they
+hold, and raw text is passed through for ~"markdown"~ and ~"html"~ and left out
+for any other format.
+
+*Escaping.* Text is escaped where Markdown would read it as markup, and nowhere
+else, so that the file reads as text too: ~*~, ~[~, ~<~, a backtick, a tilde,
+~$~ — GitHub's mathematics — and ~_~ where it is not between letters; ~&~ when an
+entity follows it, ~!~ before a link; and at the start of a paragraph's line,
+whatever would begin a heading, a quotation, a list or a rule. Emphasis is ~*~
+and ~**~ where Markdown reads them back as the same emphasis, and HTML's ~<em>~
+where it would not: a word half in emphasis is ~a*b*c~, but emphasis that
+begins with a quotation mark and has a letter before it is not something
+Markdown can write. Space at the edges of emphasis goes outside it.
+
+*Links to headings.* GitHub gives a heading an id of its own, made from its
+text, and samizdat's ids are not made the same way. So a link to a heading in
+the document — from ~@ref~, ~@toc~, ~@docref~ — goes to GitHub's id for it:
+~@section{C# & .NET}~ is ~#c--net~ on GitHub, and the second ~Usage~ is
+~#usage-1~. ~#:anchors 'html~ instead keeps samizdat's ids, in an ~<a id>~ at
+the start of each heading.
+
+~markdown-options~ takes ~#:heading-offset~ (default 1, so a section is a ~##~
+under the page's ~#~), ~#:anchors~, ~#:url-hook~, which rewrites the target of
+every link and image — a site's ~reference.html~ is ~reference.md~ in a
+repository — and the two hooks, which answer text:
+
+#+BEGIN_SRC scheme
+;; An aside is a quotation: Markdown has nothing nearer.
+(defun (asides h b)
+  (match b
+    ((Div "aside" bs) (Some (blocks->markdown h [(Quote bs)])))
+    (_ None)))
+
+(markdown-page doc #:with (markdown-options #:block-hook asides))
+#+END_SRC
+
 ** Errors
 
 A document that cannot be read, or whose commands refuse, is an ~Err~ with a
@@ -669,11 +739,17 @@ own go in ~samizdat-command-names~, for completion after an ~@~, and
 
 #+BEGIN_SRC sh
 bjo run tests/read.bjo      ;; 42 checks: the reader on its own
-bjo run tests/expand.bjo    ;; 76 checks: commands, paragraphs, typography, refusals
+bjo run tests/expand.bjo    ;; 77 checks: commands, paragraphs, typography, refusals
 bjo run tests/html.bjo      ;; 47 checks: the HTML converter, highlighting, the writer
 bjo run tests/markdown.bjo  ;; 15 checks: Markdown, translated
 bjo run tests/apidocs.bjo   ;; 27 checks: Bjolang modules' docs
+bjo run tests/gfm.bjo       ;; 45 checks: the Markdown converter, and Markdown read back
 #+END_SRC
+
+~gfm~ compares the Markdown of each kind of block and inline as text — the
+escapes, emphasis Markdown can and cannot write, GitHub's ids, lists side by
+side, tables, notes, hooks — and then writes documents as Markdown, reads them
+back with ~@markdown~, and compares the HTML of the two.
 
 ~markdown~ reads @markdown and @include-markdown into samizdat's tree: every
 kind of Markdown node, footnotes numbered with the document's notes, headings
@@ -693,7 +769,7 @@ raw elements, boolean attributes, a ~<pre>~ and a ~<style>~.
 
 ** Not yet
 
-- A second converter — plain text, or LaTeX.
+- Another converter — plain text, or LaTeX.
 - An ~@~ inside ~[...]~, for a command as an argument.
 - ~@anchor["id"]~, so that ~@ref~ can target something other than a heading.
 - ~@no-typography{...}~, to suppress typography inside a span.
