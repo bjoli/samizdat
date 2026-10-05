@@ -583,9 +583,19 @@
        (None [(Div class (resolve-blocks cx doc active bs))])))
     ((Para xs) [(Para (resolve-inlines cx doc active xs))])
     ((Heading level id xs) [(Heading level id (resolve-inlines cx doc active xs))])
+    ((UnnumberedHeading level xs) [(UnnumberedHeading level (resolve-inlines cx doc active xs))])
+    ((Figure src alt xs) [(Figure src alt (resolve-inlines cx doc active xs))])
     ((Quote bs) [(Quote (resolve-blocks cx doc active bs))])
     ((ItemList numbered start items)
      [(ItemList numbered start (vec-map (fun (item) (resolve-blocks cx doc active item)) items))])
+    ((LineBlock lines) [(LineBlock (vec-map (fun (line) (resolve-inlines cx doc active line)) lines))])
+    ((DefinitionList entries)
+     [(DefinitionList (vec-map (fun (entry)
+                                 (match entry
+                                   ((Tuple term defs)
+                                    (Tuple (resolve-inlines cx doc active term)
+                                           (vec-map (fun (d) (resolve-blocks cx doc active d)) defs)))))
+                               entries))])
     ((TableBlock t) [(TableBlock (map-table-text (fun (xs) (resolve-inlines cx doc active xs)) t))])
     (_ [b])))
 
@@ -610,6 +620,8 @@
     ((Emph xs) [(Emph (resolve-inlines cx doc active xs))])
     ((Strong xs) [(Strong (resolve-inlines cx doc active xs))])
     ((Strike xs) [(Strike (resolve-inlines cx doc active xs))])
+    ((Superscript xs) [(Superscript (resolve-inlines cx doc active xs))])
+    ((Subscript xs) [(Subscript (resolve-inlines cx doc active xs))])
     ((Link url xs) [(Link url (resolve-inlines cx doc active xs))])
     (_ [x])))
 

@@ -234,6 +234,14 @@
           (tree "See @ref[\"later\"] and @ref[\"later\"]{this}.\n@section[#:id \"later\"]{The Later One}")
           (str "(para \"See \" (link \"#later\" \"The Later One\") \" and \" (link \"#later\" \"this\") \".\")\n"
                "(heading 1 \"later\" \"The Later One\")"))
+  (expect "@ref in a definition list, a caption, a line block and a superscript"
+          (tree (str "@deflist{@term{@ref[\"a\"]} @def{See @ref[\"a\"].}}"
+                     "@image[\"c.png\"]{@ref[\"a\"]}@lineblock{@ref[\"a\"]}x@sup{@ref[\"a\"]}\n@section{A}"))
+          (str "(deflist (entry (term (link \"#a\" \"A\")) (def (para \"See \" (link \"#a\" \"A\") \".\"))))\n"
+               "(figure \"c.png\" \"\" (link \"#a\" \"A\"))\n"
+               "(line-block (line (link \"#a\" \"A\")))\n"
+               "(para \"x\" (sup (link \"#a\" \"A\")))\n"
+               "(heading 1 \"a\" \"A\")"))
   (expect "a reference to no heading"
           (refusal "@ref[\"nope\"]")
           "post.sz:1:1: @ref: there is no heading with the id nope")
