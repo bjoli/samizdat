@@ -24,11 +24,16 @@
 ;;   C-c C-l   a link around the region
 ;;   C-c '     the verbatim body at point, in a buffer of its language's mode
 ;;   C-c C-o   what the command at point names: a link, or a file it reads
+;;   C-c C-f   fold to the headings; with a prefix argument, the level to show
+;;   C-c C-a   unfold everything
 ;;
-;; `outline-minor-mode' folds sections, and `imenu' lists them.
+;; `outline-minor-mode' folds sections: TAB on a heading folds and unfolds
+;; it, S-TAB cycles the whole document, and `C-c @' has the rest of
+;; outline's commands. `imenu' lists the sections.
 
 ;;; Code:
 
+(require 'outline)
 (require 'seq)
 (require 'subr-x)
 
@@ -72,6 +77,19 @@ The key is a `#:lang', or the name of the command when it has none, as
 for `@markdown'. A language not listed here is tried as LANG-ts-mode
 and then LANG-mode."
   :type '(alist :key-type string :value-type function))
+
+(defcustom samizdat-fold-sections t
+  "Whether `samizdat-mode' turns on `outline-minor-mode'.
+With it, TAB on a heading line folds and unfolds that section, and
+S-TAB folds the whole document."
+  :type 'boolean)
+
+(defcustom samizdat-heading-indent 2
+  "How many columns each heading level below a section is shown indented.
+Only the display is indented, not the text, so that the levels stand
+apart when the document is folded to its headings. 0 shows them as
+they are."
+  :type 'natnum)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Faces
@@ -445,7 +463,8 @@ With META-ONLY, in the meta form only."
     (,(samizdat--data-matcher "#:[^][ \t\n(){}\";]+") (0 'samizdat-keyword-face))
     (,(samizdat--data-matcher "(\\(meta\\)[ \t\n)]" t) (1 'font-lock-keyword-face))
     (,(samizdat--data-matcher "(\\([[:alpha:]][^][ \t\n(){}\";]*\\)" t)
-     (1 'font-lock-variable-name-face)))
+     (1 'font-lock-variable-name-face))
+    (samizdat--match-heading-line (0 (samizdat--heading-prefix) prepend)))
   "Font-lock keywords for `samizdat-mode'.")
 
 (defun samizdat--syntactic-face (state)
@@ -506,6 +525,70 @@ the region for its body to be found."
       (1+ (/ (- (length (replace-regexp-in-string "\\*" "" name))
                 (length "section"))
              3)))))
+
+(defconst samizdat--outline-regexp
+  "[ \t]*@\\(?:sub\\)\\{0,2\\}section\\*?[[{]"
+  "What `outline-minor-mode' takes to begin a heading line.")
+
+(defun samizdat--heading-p (pos)
+  "Whether the heading match at POS is a heading, and not in a verbatim
+body, a comment, a literal or arguments."
+  (save-excursion
+    (save-match-data
+      (goto-char pos)
+      (skip-chars-forward " \t")
+      (not (or (nth 8 (syntax-ppss)) (samizdat--data-open))))))
+
+(defun samizdat-outline-search (&optional bound move backward looking-at)
+  "Find a heading for outline, as `outline-search-function' does.
+Search forward, or backward with BACKWARD, up to BOUND for a heading
+that is not inside a verbatim body or a comment. When none is found,
+point stays, or goes to BOUND with MOVE. With LOOKING-AT, answer only
+whether point is at the start of a heading."
+  (let ((re (concat "^" samizdat--outline-regexp)))
+    (if looking-at
+        (and (looking-at re) (samizdat--heading-p (point)))
+      (let ((start (point))
+            found)
+        (while (and (not found)
+                    (if backward
+                        (re-search-backward re bound t)
+                      (re-search-forward re bound t)))
+          (when (samizdat--heading-p (match-beginning 0))
+            (setq found t)))
+        (unless found
+          (goto-char (if move
+                         (or bound (if backward (point-min) (point-max)))
+                       start)))
+        found))))
+
+(defun samizdat--match-heading-line (limit)
+  "Find the next heading line before LIMIT, for font lock.
+The match is the whole line."
+  (when (and (> samizdat-heading-indent 0) (samizdat-outline-search limit))
+    (let ((bol (match-beginning 0)))
+      (goto-char bol)
+      (set-match-data (list bol (line-end-position)))
+      (end-of-line)
+      t)))
+
+(defun samizdat--heading-prefix ()
+  "The display properties that indent the heading line just matched."
+  (let ((indent (* samizdat-heading-indent
+                   (1- (save-excursion
+                         (goto-char (match-beginning 0))
+                         (samizdat-outline-level))))))
+    (when (> indent 0)
+      (let ((prefix (make-string indent ?\s)))
+        `(face nil line-prefix ,prefix wrap-prefix ,prefix)))))
+
+(defun samizdat-fold-to-sections (&optional level)
+  "Show only the headings, down to LEVEL (default: all of them).
+\\[universal-argument] or a number gives the level: 1 for sections only,
+2 for subsections too."
+  (interactive "P")
+  (unless outline-minor-mode (outline-minor-mode 1))
+  (outline-hide-sublevels (if level (prefix-numeric-value level) 3)))
 
 (defun samizdat--imenu-index ()
   "The sections, subsections and subsubsections, for `imenu'."
@@ -842,6 +925,8 @@ when it is returned, as the reader takes it off when it reads it."
     (define-key map (kbd "C-c C-l") #'samizdat-insert-link)
     (define-key map (kbd "C-c '") #'samizdat-edit-code-block)
     (define-key map (kbd "C-c C-o") #'samizdat-open-at-point)
+    (define-key map (kbd "C-c C-f") #'samizdat-fold-to-sections)
+    (define-key map (kbd "C-c C-a") #'outline-show-all)
     map)
   "Keymap for `samizdat-mode'.")
 
@@ -861,6 +946,8 @@ when it is returned, as the reader takes it off when it reads it."
                 (font-lock-syntactic-face-function . samizdat--syntactic-face)))
   (add-hook 'font-lock-extend-region-functions #'samizdat--extend-region nil t)
   (setq-local font-lock-multiline t)
+  (setq-local font-lock-extra-managed-props
+              (append '(line-prefix wrap-prefix) font-lock-extra-managed-props))
   (setq-local comment-start "@; ")
   (setq-local comment-end "")
   (setq-local comment-start-skip "@;+[ \t]*")
@@ -870,8 +957,12 @@ when it is returned, as the reader takes it off when it reads it."
               (concat "\f\\|[ \t]*$\\|[ \t]*\\(?:}\\|@"
                       (regexp-opt samizdat-block-commands)
                       "\\(?:[][{|[:space:]]\\|$\\)\\)"))
-  (setq-local outline-regexp "[ \t]*@\\(?:sub\\)\\{0,2\\}section\\*?")
+  (setq-local outline-regexp samizdat--outline-regexp)
+  (setq-local outline-search-function #'samizdat-outline-search)
   (setq-local outline-level #'samizdat-outline-level)
+  ;; TAB on a heading folds it, S-TAB folds the whole document.
+  (setq-local outline-minor-mode-cycle t)
+  (when samizdat-fold-sections (outline-minor-mode 1))
   (setq-local imenu-create-index-function #'samizdat--imenu-index)
   (add-hook 'completion-at-point-functions #'samizdat-completion-at-point nil t))
 
