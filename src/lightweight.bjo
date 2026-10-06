@@ -515,4 +515,4 @@
            (block (TableBlock (Table (caption caption)
                                      (aligns aligns)
                                      (head (vec-map cells-of head))
-                                     (bodies (vec-map (fun (g) (vec-map cells-of g)) bodies)))))))))))
+                                     (bodies (vec-map (fun (g) (vec-map cells-of g)) bodies))))))))))
