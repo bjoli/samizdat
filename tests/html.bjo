@@ -133,7 +133,7 @@
   ;; --- nodes and the writer ---------------------------------------------------
   (expect "the document as nodes, SXML"
           (->str (document->nodes (doc-of "Hi @em{there}.")))
-          "'((p \"Hi \" (em \"there\") \".\"))")
+          "((p \"Hi \" (em \"there\") \".\"))")
   (expect "an empty element is closed, a void one has no end, and a block after text gets a line"
           (nodes->html (list (html-element "td" Nil Nil) (html-element "br" Nil Nil) (html-element "p" Nil Nil)))
           "<td></td><br>\n<p></p>")
