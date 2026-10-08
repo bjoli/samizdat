@@ -455,9 +455,13 @@
                              (let ((members (vec-filter (fun (d) (= (group-of d) g)) docs)))
                                (if (vec-empty? members)
                                    out
+                                   ;; A loop rather than a vec-map: an ordinary
+                                   ;; lambda would call the ordinary copy of
+                                   ;; entry-blocks from a bjoroutine's copy of
+                                   ;; this, and that copy reaches a reader.
                                    (let ((id (unique-id! cx g)))
-                                     (vec-add out (Tuple g id (vec-map (fun (d) (entry-blocks cx c m d 3 (vec-empty)))
-                                                                       members))))))))))
+                                     (vec-add out (Tuple g id (loop (:for d members)
+                                                                    (:acc entries (vecing (entry-blocks cx c m d 3 (vec-empty))))))))))))))
   (def index
     (loop (:for group groups)
           (:acc out (folding (vec-empty)
