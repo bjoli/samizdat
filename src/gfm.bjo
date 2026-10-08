@@ -24,7 +24,8 @@
 ;; which is not how samizdat makes them, so a link to a heading in the
 ;; document — @ref, @toc, @docref — is changed to GitHub's id for it.
 ;; `#:anchors 'html` instead keeps samizdat's ids, in an <a id> in each
-;; heading.
+;; heading. An `Anchor` is an <a id> with samizdat's id either way, and a
+;; link to it keeps that id: GitHub finds an <a id> by its own id.
 ;;
 ;; Raw text for "markdown" or "html" is passed through, and for any other
 ;; format left out. `Span` and `Div` are what they hold. A hook takes over
@@ -47,7 +48,7 @@
 (import (std prelude))
 (import (samizdat doc))
 ;; A definition's term is written in its <dt> as HTML.
-(import (only (samizdat html) inlines->html default-html))
+(import (only (samizdat html) inlines->html default-html escape-attribute))
 
 ;; ---------------------------------------------------------------------------
 ;; Options
@@ -412,7 +413,8 @@
                     (InCell "<br>")))
        ((NoteRef n) (str "[^" (int->string n) "]"))
        ((Span c xs) (run h mode xs before after prev next open))
-       ((RawInline format s) (if (raw-format? format) s ""))))))
+       ((RawInline format s) (if (raw-format? format) s ""))
+       ((Anchor id) (str "<a id=\"" (escape-attribute id) "\"></a>"))))))
 
 ;; Space at either end goes outside the marks, where Markdown wants it. The
 ;; marks are HTML's when Markdown would not read them back: punctuation

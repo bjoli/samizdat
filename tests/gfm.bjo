@@ -145,6 +145,12 @@
   (expect "#:anchors 'html keeps samizdat's ids"
           (md-with (markdown-options #:anchors 'html) "@section{Usage}\nSee @ref[\"usage\"].")
           "## <a id=\"usage\"></a>Usage\n\nSee [Usage](#usage).")
+  (expect "an anchor is an <a id> with samizdat's id, and a link to it keeps the id"
+          (document->markdown (Document (meta None)
+                                        (blocks [(Para [(Anchor "here") (Str "Text, and ")
+                                                        (Link "#here" [(Str "back")])])])
+                                        (notes (vec-empty)) (sources (vec-empty))))
+          "<a id=\"here\"></a>Text, and [back](#here)")
   (expect "a table of contents"
           (md-of "@toc\n@section{A}\n@subsection{B}")
           "- [A](#a)\n  - [B](#b)\n\n## A\n\n### B")

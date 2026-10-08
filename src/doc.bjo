@@ -69,7 +69,10 @@
                    (: NoteRef int)
                    (: Span string (Vec Inline))
                    ;; A format — "html" — and text in it.
-                   (: RawInline string string)))
+                   (: RawInline string string)
+                   ;; A place to link to that is not a heading: an id, unique
+                   ;; in the document, and nothing to show.
+                   (: Anchor string)))
   (: Block (Union (: Para (Vec Inline))
                   ;; A level, 1 for a section and more for the ones inside it;
                   ;; an id to link to, unique in the document; and the title.
@@ -176,7 +179,8 @@
     (LineBreak " ")
     ((NoteRef n) "")
     ((Span c xs) (inlines->text xs))
-    ((RawInline f s) "")))
+    ((RawInline f s) "")
+    ((Anchor id) "")))
 
 ;; ---------------------------------------------------------------------------
 ;; Headings
@@ -267,7 +271,8 @@
     (LineBreak "(br)")
     ((NoteRef n) (form "note-ref" [(int->string n)]))
     ((Span c xs) (form "span" (vec-insert (vec-map inline->sexp xs) 0 (quoted c))))
-    ((RawInline f s) (form "raw" [(quoted f) (quoted s)]))))
+    ((RawInline f s) (form "raw" [(quoted f) (quoted s)]))
+    ((Anchor id) (form "anchor" [(quoted id)]))))
 
 (: blocks->sexp (-> (Vec Block) string))
 (defun (blocks->sexp blocks)

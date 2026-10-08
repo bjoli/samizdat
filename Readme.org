@@ -499,7 +499,7 @@ A refusal from such a function names the file its command was written in.
                    (: Checkbox bool) (: Code string)
                    (: Link string (Vec Inline)) (: Image string string)
                    LineBreak (: NoteRef int) (: Span string (Vec Inline))
-                   (: RawInline string string)))
+                   (: RawInline string string) (: Anchor string)))
   (: Block (Union (: Para (Vec Inline)) (: Heading int string (Vec Inline))
                   (: UnnumberedHeading int (Vec Inline))
                   (: CodeBlock string string) (: Figure string string (Vec Inline))
@@ -526,7 +526,9 @@ is all of it: the compiler says when a case is missing. ~Span~ and ~Div~ are
 for what the rest does not cover, with a class a converter may know something
 about and otherwise treats as a plain container. ~RawInline~ and ~RawBlock~
 are for one format, which its converter passes through and every other one
-leaves out. ~document->sexp~ in ~(samizdat doc)~ is a converter about forty
+leaves out. ~Anchor~ is a place to link to that is not a heading: an id, made
+with ~unique-id!~, and nothing to show. HTML writes it ~<a id="...">~, and so
+does Markdown, whose links to it keep the id. ~document->sexp~ in ~(samizdat doc)~ is a converter about forty
 lines long, which the tests use.
 
 *** The HTML one
@@ -740,10 +742,10 @@ own go in ~samizdat-command-names~, for completion after an ~@~, and
 #+BEGIN_SRC sh
 bjo run tests/read.bjo      ;; 42 checks: the reader on its own
 bjo run tests/expand.bjo    ;; 77 checks: commands, paragraphs, typography, refusals
-bjo run tests/html.bjo      ;; 47 checks: the HTML converter, highlighting, the writer
+bjo run tests/html.bjo      ;; 48 checks: the HTML converter, highlighting, the writer
 bjo run tests/markdown.bjo  ;; 15 checks: Markdown, translated
 bjo run tests/apidocs.bjo   ;; 27 checks: Bjolang modules' docs
-bjo run tests/gfm.bjo       ;; 45 checks: the Markdown converter, and Markdown read back
+bjo run tests/gfm.bjo       ;; 46 checks: the Markdown converter, and Markdown read back
 #+END_SRC
 
 ~gfm~ compares the Markdown of each kind of block and inline as text — the

@@ -279,7 +279,8 @@
                                                   (Tuple href-attr (str "#" (id h (str "note-" k)))))
                                       (list (xml-text k)))))])
     ((Span c xs) [(xml-element span-tag (list (Tuple class-attr c)) (inlines->nodes h xs))])
-    ((RawInline format s) (if (= format "html") [(raw-html s)] (vec-empty)))))
+    ((RawInline format s) (if (= format "html") [(raw-html s)] (vec-empty)))
+    ((Anchor aid) [(xml-element a-tag (list (Tuple id-attr (id h aid))) Nil)])))
 
 ;; ---------------------------------------------------------------------------
 ;; Blocks

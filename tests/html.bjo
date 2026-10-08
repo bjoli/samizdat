@@ -214,6 +214,13 @@
   (expect "a link to an id in the document has the prefix, as the id does"
           (html-with (html-options #:id-prefix "p-") "@ref[\"a\"] @link[\"#top\"]{up} @link[\"/x#y\"]{there}\n@section{A}")
           "<p><a href=\"#p-a\">A</a> <a href=\"#p-top\">up</a> <a href=\"/x#y\">there</a></p>\n<h2 id=\"p-a\">A</h2>")
+  (expect "an anchor is an empty <a> with the id, prefixed as the links to it are"
+          (document->html (Document (meta None)
+                                    (blocks [(Para [(Anchor "here") (Str "Text, and ")
+                                                    (Link "#here" [(Str "back")])])])
+                                    (notes (vec-empty)) (sources (vec-empty)))
+                          #:with (html-options #:id-prefix "p-"))
+          "<p><a id=\"p-here\"></a>Text, and <a href=\"#p-here\">back</a></p>")
   (expect "a list read as Markdown writes one"
           (html-of "@read-list{\n- a\n  - b\n- c\n}")
           "<ul>\n<li>a\n<ul>\n<li>b</li>\n</ul>\n</li>\n<li>c</li>\n</ul>")
