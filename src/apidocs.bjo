@@ -309,10 +309,10 @@
                      ((PBlock _) (Str ""))))
                  (see-para cx m ns))))
 
-;; One definition: a heading to link to, what kind it is, its code, its doc,
-;; and what the document adds.
-(: entry-blocks (-> Ctx Call ApiModule Doc int (Vec Block) Block))
-(defun (entry-blocks cx c m d level extra)
+;; One definition: a heading to link to, what kind it is and `beside` that,
+;; its code, its doc, and what the document adds.
+(: entry-blocks (-> Ctx Call ApiModule Doc int (Vec Inline) (Vec Block) Block))
+(defun (entry-blocks cx c m d level beside extra)
   (def name (doc-subject->string (record-ref d subject)))
   (def key (shown-key m name))
   (match (state-ref cx key)
@@ -323,7 +323,8 @@
   (def code (code-of d))
   (Div "doc-entry"
        (vec-merge (vec-merge [(Heading level id [(Code name)])
-                              (Para [(Span "doc-kind" [(Str (kind-name (record-ref d kind)))])])]
+                              (Para (vec-merge [(Span "doc-kind" [(Str (kind-name (record-ref d kind)))])]
+                                               beside))]
                              (if (string-empty? code) [] [(CodeBlock "bjolang" code)]))
                   (vec-merge (doc-blocks cx c m d) extra))))
 
@@ -354,7 +355,7 @@
   (check-keywords! cx c ["module" "level"])
   (def m (module-for cx c))
   (def d (doc-of cx c m (name-arg cx c)))
-  (block (entry-blocks cx c m d (kw-int-or cx c "level" 4) (expand-blocks cx c))))
+  (block (entry-blocks cx c m d (kw-int-or cx c "level" 4) (vec-empty) (expand-blocks cx c))))
 
 ;; @defdocs: every definition's doc, in the order the module wrote them.
 (: defdocs (-> Ctx Call (Vec Piece)))
@@ -368,7 +369,7 @@
         (:acc out (folding (vec-empty)
                            (match (record-ref d subject)
                              (SubjectModule out)
-                             (_ (vec-merge out (block (entry-blocks cx c m d level (vec-empty))))))))))
+                             (_ (vec-merge out (block (entry-blocks cx c m d level (vec-empty) (vec-empty))))))))))
 
 ;; The module #:module or #:path names, as `module-of` takes it: "std
 ;; datetime", with or without its parentheses, is a name; a path is a string.
@@ -433,7 +434,8 @@
 ;; page for a module. A link to the reference first; then Overview, the
 ;; module's own doc and the body; then Reference, every name in alphabetical
 ;; order as links, and every definition's doc in the order the module wrote
-;; them. The module is @docref's from here on.
+;; them, each with a link back up to its kind's names in the index. The module
+;; is @docref's from here on.
 (: generate-docs (-> Ctx Call (Vec Piece)))
 (defun (generate-docs cx c)
   (check-keywords! cx c ["module" "path"])
@@ -448,32 +450,37 @@
              ((Some d) (doc-blocks cx c m d))
              (None (vec-empty))))
   ;; Each group's heading and entries first, so that every id exists when
-  ;; the index that comes before them links to it.
+  ;; the index that comes before them links to it. Each entry links back up
+  ;; to its group's place in the index, an anchor there.
   (def groups
     (loop (:for g group-names)
           (:acc out (folding (vec-empty)
                              (let ((members (vec-filter (fun (d) (= (group-of d) g)) docs)))
                                (if (vec-empty? members)
                                    out
-                                   ;; A loop rather than a vec-map: an ordinary
-                                   ;; lambda would call the ordinary copy of
-                                   ;; entry-blocks from a bjoroutine's copy of
-                                   ;; this, and that copy reaches a reader.
-                                   (let ((id (unique-id! cx g)))
-                                     (vec-add out (Tuple g id (loop (:for d members)
-                                                                    (:acc entries (vecing (entry-blocks cx c m d 3 (vec-empty))))))))))))))
+                                   (let ((id (unique-id! cx g))
+                                         (listed (unique-id! cx (str "index " g))))
+                                     (def up [(Str " ")
+                                              (Span "doc-up" [(Link (str "#" listed) [(Str (str "↑ " g))])])])
+                                     ;; A loop rather than a vec-map: an ordinary
+                                     ;; lambda would call the ordinary copy of
+                                     ;; entry-blocks from a bjoroutine's copy of
+                                     ;; this, and that copy reaches a reader.
+                                     (vec-add out (Tuple g (Tuple id listed)
+                                                         (loop (:for d members)
+                                                               (:acc entries (vecing (entry-blocks cx c m d 3 up (vec-empty))))))))))))))
   (def index
     (loop (:for group groups)
           (:acc out (folding (vec-empty)
                              (match group
-                               ((Tuple g id entries)
-                                (vec-merge out [(Para [(Link (str "#" id) [(Strong [(Str g)])])])
+                               ((Tuple g (Tuple id listed) entries)
+                                (vec-merge out [(Para [(Anchor listed) (Link (str "#" id) [(Strong [(Str g)])])])
                                                 (ItemList #f 1 (group-index cx m docs g))])))))))
   (def sections
     (loop (:for group groups)
           (:acc out (folding (vec-empty)
                              (match group
-                               ((Tuple g id entries)
+                               ((Tuple g (Tuple id listed) entries)
                                 (vec-merge (vec-add out (Heading 2 id [(Str g)])) entries)))))))
   (def top [(Para [(Link (str "#" reference-id) [(Str "Reference")])])
             (Heading 1 overview-id [(Str "Overview")])

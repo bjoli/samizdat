@@ -96,9 +96,17 @@
                 "(heading 1 \"overview\" \"Overview\")"
                 "(heading 1 \"reference\" \"Reference\")"
                 (str "(div \"doc-index\""
-                     " (para (link \"#types\" (strong \"Types\"))) (bullets (item (para (link \"#apidoc-lib-point\" (code \"Point\")))))"
-                     " (para (link \"#functions\" (strong \"Functions\"))) (bullets (item (para (link \"#apidoc-lib-bound\" (code \"bound\")))))"
-                     " (para (link \"#macros\" (strong \"Macros\"))) (bullets (item (para (link \"#apidoc-lib-with-twice\" (code \"with-twice\"))))))")))
+                     " (para (anchor \"index-types\") (link \"#types\" (strong \"Types\"))) (bullets (item (para (link \"#apidoc-lib-point\" (code \"Point\")))))"
+                     " (para (anchor \"index-functions\") (link \"#functions\" (strong \"Functions\"))) (bullets (item (para (link \"#apidoc-lib-bound\" (code \"bound\")))))"
+                     " (para (anchor \"index-macros\") (link \"#macros\" (strong \"Macros\"))) (bullets (item (para (link \"#apidoc-lib-with-twice\" (code \"with-twice\"))))))")))
+  (expect "each entry links back up to its kind's names in the index"
+          (list (string-contains? (vec-ref page 6) "(para (span \"doc-kind\" \"record\") \" \" (span \"doc-up\" (link \"#index-types\" \"↑ Types\")))")
+                (string-contains? (vec-ref page 8) "(para (span \"doc-kind\" \"function\") \" \" (span \"doc-up\" (link \"#index-functions\" \"↑ Functions\")))")
+                (string-contains? (vec-ref page 10) "(para (span \"doc-kind\" \"macro\") \" \" (span \"doc-up\" (link \"#index-macros\" \"↑ Macros\")))"))
+          (list #t #t #t))
+  (expect "an entry shown by @defdocs has no index to link up to"
+          (string-contains? (tree (str lib "@defdocs")) "doc-up")
+          #f)
   (expect "the overview is the module's doc and the body"
           (string-ends-with? (vec-ref page 2) "(para \"Ours.\"))")
           #t)
