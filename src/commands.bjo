@@ -39,6 +39,8 @@
 ;;
 ;; The whole document
 ;;     @toc                            a table of contents; #:depth 3 for more
+;;     @numbered-headings              the headings numbered, 1, 1.1, 1.1.1;
+;;                                     #:depth 2 for fewer levels
 ;;     @ref["id"]  @ref["id"]{...}     a link to a heading, anywhere in it
 ;;     @include["other.sz"]            another document, as if written here
 ;;
@@ -366,14 +368,18 @@
        (match (vec-ref hs i)
          ((Tuple l id xs) (go (+ i 1) (vec-add items [(Para [(Link (str "#" id) xs)])]))))))))
 
+;; Of class "toc", and "toc numbered" when the headings have their numbers in
+;; their titles, for a style sheet that leaves out the bullets.
 (: toc-of (-> (Vec Entry) (Vec Block)))
 (defun (toc-of hs)
   (if (vec-empty? hs)
       (vec-empty)
       (let ((top (loop (:for h hs)
-                       (:acc least (folding 1000 (if (< (entry-level h) least) (entry-level h) least))))))
+                       (:acc least (folding 1000 (if (< (entry-level h) least) (entry-level h) least)))))
+            (numbered (loop (:for h hs)
+                            (:acc any (folding #f (or any (match h ((Tuple l id xs) (numbered-title? xs)))))))))
         (match (toc-level hs 0 top)
-          ((Tuple items next) [(Div "toc" [(ItemList #f 1 items)])])))))
+          ((Tuple items next) [(Div (if numbered "toc numbered" "toc") [(ItemList #f 1 items)])])))))
 
 ;; @toc, or @toc[#:depth 3]: the headings down to that level — sections and
 ;; subsections by default — as nested lists of links. It is made once every
@@ -397,6 +403,20 @@
                                ((Some xs) found)
                                (None (match h
                                        ((Tuple level id xs) (if (= id target) (Some xs) None)))))))))
+
+;; @numbered-headings, anywhere in the document: its sections, subsections and
+;; subsubsections numbered, 1, 1.1, 1.1.1, in their titles and so in @toc and
+;; @ref too. #:depth 2 numbers down to the subsections, and a heading deeper
+;; than the depth, or an unnumbered one, @section*, has no number.
+(: numbered-headings (-> Ctx Call (Vec Piece)))
+(defun (numbered-headings cx c)
+  (check-keywords! cx c ["depth"])
+  (no-body! cx c)
+  (when (> (arg-count c) 0) (refuse cx c "takes no arguments; the depth is #:depth"))
+  (def depth (kw-int-or cx c "depth" 3))
+  (when (< depth 1) (refuse cx c (str "#:depth is 1 or more, not " (int->string depth))))
+  (number-headings! cx c depth)
+  nothing)
 
 ;; @ref["the-defaults"]: a link to the heading with that id, which says the
 ;; heading's title; @ref["the-defaults"]{that section} says something else.
@@ -426,6 +446,7 @@
 (: standard-commands (Map string Command))
 (def standard-commands
   #map(("toc" toc)
+       ("numbered-headings" numbered-headings)
        ("ref" reference)
        ("include" include)
        ("em" em)

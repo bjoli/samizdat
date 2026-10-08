@@ -211,6 +211,10 @@
           (html-of "@toc\n@section{A}\n@subsection{B}")
           (str "<div class=\"toc\">\n<ul>\n<li><a href=\"#a\">A</a>\n<ul>\n<li><a href=\"#b\">B</a></li>\n</ul>\n</li>\n</ul>\n</div>\n"
                "<h2 id=\"a\">A</h2>\n<h3 id=\"b\">B</h3>"))
+  (expect "numbered headings: the number in a span, in the heading and the table of contents"
+          (html-of "@numbered-headings\n@toc\n@section{A}")
+          (str "<div class=\"toc numbered\">\n<ul>\n<li><a href=\"#a\"><span class=\"heading-number\">1</span> A</a></li>\n</ul>\n</div>\n"
+               "<h2 id=\"a\"><span class=\"heading-number\">1</span> A</h2>"))
   (expect "a link to an id in the document has the prefix, as the id does"
           (html-with (html-options #:id-prefix "p-") "@ref[\"a\"] @link[\"#top\"]{up} @link[\"/x#y\"]{there}\n@section{A}")
           "<p><a href=\"#p-a\">A</a> <a href=\"#p-top\">up</a> <a href=\"/x#y\">there</a></p>\n<h2 id=\"p-a\">A</h2>")

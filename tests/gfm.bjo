@@ -151,6 +151,9 @@
                                                         (Link "#here" [(Str "back")])])])
                                         (notes (vec-empty)) (sources (vec-empty))))
           "<a id=\"here\"></a>Text, and [back](#here)")
+  (expect "numbered headings, and GitHub's id for one, which has its number"
+          (md-of "@numbered-headings\n@section{Intro}\n@subsection{Detail}\nSee @ref[\"detail\"].")
+          "## 1 Intro\n\n### 1.1 Detail\n\nSee [1.1 Detail](#11-detail).")
   (expect "a table of contents"
           (md-of "@toc\n@section{A}\n@subsection{B}")
           "- [A](#a)\n  - [B](#b)\n\n## A\n\n### B")

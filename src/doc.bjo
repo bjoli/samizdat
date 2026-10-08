@@ -24,6 +24,8 @@
   inlines->text
   ;; Every heading, in order: for a table of contents.
   document-headings
+  ;; The headings numbered, 1, 1.1, 2, and whether a title has its number.
+  number-headings numbered-title?
   ;; A table with each piece of its text rewritten: caption and cells.
   map-table-text
   ;; A converter to s-expressions, for tests and for looking.
@@ -215,6 +217,70 @@
                                                                                            (:acc inner (folding (vec-empty)
                                                                                                                 (vec-merge inner (headings-in def)))))))))))))
                              (_ out))))))
+
+;; ---------------------------------------------------------------------------
+;; Numbering
+;; ---------------------------------------------------------------------------
+
+;; The headings down to level `depth` numbered, in the order
+;; `document-headings` finds them: 1, 1.1, 1.2, 2. The number goes in front of
+;; the title, a `Span` of class "heading-number" and a space, so that every
+;; converter shows it, and so does what is made from the title afterwards: a
+;; table of contents, a reference. It counts from the shallowest heading
+;; numbered, and a level passed over is a 0: a subsection before any section
+;; is 0.1. An unnumbered heading, and one deeper than `depth`, is left as it
+;; is, and no heading's id changes.
+(: number-headings (-> (Vec Block) int (Vec Block)))
+(defun (number-headings bs depth)
+  (def top (loop (:for h (headings-in bs))
+                 (:acc least (folding 0 (match h
+                                          ((Tuple level id xs)
+                                           (if (and (<= level depth) (or (= least 0) (< level least)))
+                                               level
+                                               least)))))))
+  (if (= top 0)
+      bs
+      (number-in bs depth top (make-box (vec-empty)))))
+
+;; `counters` is the number of the heading numbered last, one part a level.
+(: number-in (-> (Vec Block) int int (Box (Vec int)) (Vec Block)))
+(defun (number-in bs depth top counters)
+  (vec-map (fun (b) (number-block b depth top counters)) bs))
+
+(: number-block (-> Block int int (Box (Vec int)) Block))
+(defun (number-block b depth top counters)
+  (match b
+    ((Heading level id xs)
+     (if (> level depth)
+         b
+         (let ((k (- level top))
+               (last (box-ref counters)))
+           (def now (loop (:for i (range 0 (+ k 1)))
+                          (:acc (vecing (let ((n (if (< i (vec-length last)) (vec-ref last i) 0)))
+                                          (if (= i k) (+ n 1) n))))))
+           (box-set! counters now)
+           (Heading level id (vec-merge [(Span "heading-number" [(Str (string-join (vec-map int->string now) "."))])
+                                         (Str " ")]
+                                        xs)))))
+    ((Quote inner) (Quote (number-in inner depth top counters)))
+    ((Div c inner) (Div c (number-in inner depth top counters)))
+    ((ItemList numbered start items)
+     (ItemList numbered start (vec-map (fun (item) (number-in item depth top counters)) items)))
+    ((DefinitionList entries)
+     (DefinitionList (vec-map (fun (entry)
+                                (match entry
+                                  ((Tuple term defs)
+                                   (Tuple term (vec-map (fun (d) (number-in d depth top counters)) defs)))))
+                              entries)))
+    (_ b)))
+
+;; Whether a heading's title begins with the number `number-headings` gave it.
+(: numbered-title? (-> (Vec Inline) bool))
+(defun (numbered-title? xs)
+  (and (not (vec-empty? xs))
+       (match (vec-ref xs 0)
+         ((Span "heading-number" n) #t)
+         (_ #f))))
 
 ;; ---------------------------------------------------------------------------
 ;; Tables

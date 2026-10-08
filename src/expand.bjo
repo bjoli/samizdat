@@ -36,6 +36,8 @@
   items->blocks items->inlines
   ;; Answering once the document is finished: a table of contents, a reference.
   defer-blocks defer-inlines
+  ;; The document's headings numbered once every command has run.
+  number-headings!
   ;; Other files, relative to the document being expanded.
   include-file relative-path read-relative add-source!
   ;; The arguments.
@@ -550,6 +552,19 @@
 (defun (defer-inlines cx make)
   (inline (Span (later-class (later! cx (LaterInlines make))) (vec-empty))))
 
+(: numbering-key string)
+(def numbering-key "numbered-headings:depth")
+
+;; Numbers the document's headings down to level `depth`, 1, 1.1, 2, once
+;; every command has run and before what was deferred is made, so that a
+;; table of contents and a reference say the numbers: see `number-headings`.
+;; A document numbers its headings once, and `c` is refused the second time.
+(: number-headings! (-> Ctx Call int void))
+(defun (number-headings! cx c depth)
+  (match (state-ref cx numbering-key)
+    ((Some _) (refuse cx c "the headings are numbered already: say it once"))
+    (None (state-set! cx numbering-key (BjoInt (cast long depth))))))
+
 ;; Runs `thunk` as if in the file `source`, so that a refusal names it.
 (: in-source (-> Ctx string (-> %a) %a))
 (defun (in-source cx source thunk)
@@ -778,11 +793,14 @@
                          (notes (vec-map smarten (record-ref doc notes))))
              doc)))))
 
-;; Every command run, and then what was deferred, given the document as it
-;; stood when every command had run.
+;; Every command run, the headings numbered if the document asked, and then
+;; what was deferred, given the document as it stood then.
 (: finish (-> Ctx Source Document))
 (defun (finish cx src)
-  (def blocks (decode (expand-items cx (record-ref src content))))
+  (def expanded (decode (expand-items cx (record-ref src content))))
+  (def blocks (match (state-ref cx numbering-key)
+                ((Some (BjoInt depth)) (number-headings expanded (cast System.Int32 depth)))
+                (_ expanded)))
   (def notes (vec-map (fun (n) (option-ref-or n (vec-empty))) (record-ref cx notes)))
   (def before (Document (meta (record-ref src meta)) (blocks blocks) (notes notes)
                         (sources (record-ref cx sources))))

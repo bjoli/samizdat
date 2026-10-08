@@ -190,6 +190,7 @@ to say; ~html-page~ only looks for a ~(title ...)~.
 | ~@div["class"]{...}~               | blocks with a class                                 |
 | ~@raw-block["html"]{...}~          | a block for one format                              |
 | ~@toc~                             | a table of contents; ~#:depth 3~ goes a level deeper |
+| ~@numbered-headings~               | the headings numbered, 1, 1.1, 1.1.1; ~#:depth 2~ for fewer levels |
 | ~@ref["id"]~ ~@ref["id"]{...}~     | a link to a heading, before or after it             |
 | ~@include["other.sz"]~             | another document, as if it were written here        |
 | ~@generate-docs[#:module "std random"]~ | a page of a Bjolang module's docs; see below   |
@@ -242,6 +243,37 @@ may come before it or after. An id no heading has is refused.
 
 Both are made in a way a command of your own can use too; see ~defer-blocks~
 under Writing a command.
+
+*** Numbered headings
+
+#+BEGIN_SRC text
+@numbered-headings
+@toc
+
+@section{Reading}            1 Reading
+@subsection{The meta form}   1.1 The meta form
+@section*{An aside}          An aside
+@section{Writing}            2 Writing
+#+END_SRC
+
+~@numbered-headings~, anywhere in the document, numbers its sections,
+subsections and subsubsections, those in included files too. The number is
+part of the title, so the table of contents says it, and so does a ~@ref~
+that says the title. ~#:depth 2~ numbers down to the subsections and
+~#:depth 1~ the sections alone; a starred heading has no number and takes
+none. Numbering begins at the shallowest heading numbered, and a level
+passed over is a 0: a subsection before the first section is 0.1. Ids are
+made from the title before it is numbered, so a link to a heading does not
+change when it is.
+
+In the tree the number is a ~Span~ of class ~heading-number~ at the start of
+the title, then a space: HTML writes ~<h2 id="reading"><span
+class="heading-number">1</span> Reading</h2>~. A table of contents of
+numbered headings is a ~Div~ of class ~toc numbered~, for a style sheet that
+leaves out its bullets. On GitHub a heading's id has its number in it,
+~#11-the-meta-form~, and ~(samizdat gfm)~ links to that.
+~(number-headings blocks depth)~ in ~(samizdat doc)~ is the numbering on its
+own.
 
 ** Bjolang modules' docs
 
@@ -473,6 +505,7 @@ What a command is written with, from ~(samizdat expand)~:
 | ~(text-command "text")~                | a command that stands for some text             |
 | ~(items->blocks cx items)~             | any ~At~ items — part of a body a command took apart — as paragraphs and blocks |
 | ~(defer-blocks cx f)~ ~(defer-inlines cx f)~ | a placeholder now, and later what ~f~ makes of the finished ~Document~ |
+| ~(number-headings! cx c depth)~        | the document's headings numbered once every command has run, as ~@numbered-headings~ does |
 | ~(include-file cx c path)~             | another document, expanded here                 |
 | ~(relative-path cx path)~ ~(read-relative cx c path)~ | a path relative to the file being expanded, and the text of it |
 
@@ -744,11 +777,11 @@ own go in ~samizdat-command-names~, for completion after an ~@~, and
 
 #+BEGIN_SRC sh
 bjo run tests/read.bjo      ;; 42 checks: the reader on its own
-bjo run tests/expand.bjo    ;; 77 checks: commands, paragraphs, typography, refusals
-bjo run tests/html.bjo      ;; 48 checks: the HTML converter, highlighting, the writer
+bjo run tests/expand.bjo    ;; 86 checks: commands, paragraphs, typography, refusals
+bjo run tests/html.bjo      ;; 49 checks: the HTML converter, highlighting, the writer
 bjo run tests/markdown.bjo  ;; 15 checks: Markdown, translated
 bjo run tests/apidocs.bjo   ;; 29 checks: Bjolang modules' docs
-bjo run tests/gfm.bjo       ;; 46 checks: the Markdown converter, and Markdown read back
+bjo run tests/gfm.bjo       ;; 47 checks: the Markdown converter, and Markdown read back
 #+END_SRC
 
 ~gfm~ compares the Markdown of each kind of block and inline as text — the

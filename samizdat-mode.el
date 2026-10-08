@@ -44,7 +44,7 @@
 (defcustom samizdat-command-names
   '("blockquote" "br" "checkbox" "code" "codeblock" "comment" "def" "deflist"
     "div" "em" "hr" "image" "include" "include-markdown" "item" "itemlist"
-    "lineblock" "link" "markdown" "note" "raw" "raw-block" "read-list"
+    "lineblock" "link" "markdown" "note" "numbered-headings" "raw" "raw-block" "read-list"
     "read-table" "ref" "section" "section*" "span" "strike" "strong" "sub"
     "subsection" "subsection*" "subsubsection" "subsubsection*" "sup" "term"
     "toc")
@@ -55,7 +55,7 @@ The standard commands; add the ones your blog defines."
 (defcustom samizdat-block-commands
   '("blockquote" "codeblock" "comment" "def" "deflist" "div" "hr" "image"
     "include" "include-markdown" "item" "itemlist" "lineblock" "markdown"
-    "raw-block" "read-list" "read-table" "section" "section*" "subsection"
+    "numbered-headings" "raw-block" "read-list" "read-table" "section" "section*" "subsection"
     "subsection*" "subsubsection" "subsubsection*" "term" "toc")
   "Commands that make blocks.
 A line that begins with one begins a paragraph, so filling does not

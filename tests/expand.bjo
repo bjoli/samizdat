@@ -229,6 +229,49 @@
           (vec-ref (string-split (tree "@toc\n@include[\"tests/fixtures/chapter.sz\"]") "\n") 0)
           "(div \"toc\" (bullets (item (para (link \"#included\" \"Included\")))))")
 
+  ;; --- numbered headings --------------------------------------------------------
+  (expect "@numbered-headings numbers the headings, and @toc says the numbers"
+          (tree (str "@numbered-headings\n@toc\n@section{One}\n@subsection{One A}\n@subsubsection{Deep}\n"
+                     "@section{Two}\n@subsection{Two A}"))
+          (str "(div \"toc numbered\" (bullets"
+               " (item (para (link \"#one\" (span \"heading-number\" \"1\") \" \" \"One\"))"
+               " (bullets (item (para (link \"#one-a\" (span \"heading-number\" \"1.1\") \" \" \"One A\")))))"
+               " (item (para (link \"#two\" (span \"heading-number\" \"2\") \" \" \"Two\"))"
+               " (bullets (item (para (link \"#two-a\" (span \"heading-number\" \"2.1\") \" \" \"Two A\")))))))\n"
+               "(heading 1 \"one\" (span \"heading-number\" \"1\") \" \" \"One\")\n"
+               "(heading 2 \"one-a\" (span \"heading-number\" \"1.1\") \" \" \"One A\")\n"
+               "(heading 3 \"deep\" (span \"heading-number\" \"1.1.1\") \" \" \"Deep\")\n"
+               "(heading 1 \"two\" (span \"heading-number\" \"2\") \" \" \"Two\")\n"
+               "(heading 2 \"two-a\" (span \"heading-number\" \"2.1\") \" \" \"Two A\")"))
+  (expect "#:depth 1 numbers the sections only"
+          (tree "@numbered-headings[#:depth 1]\n@section{A}\n@subsection{B}")
+          "(heading 1 \"a\" (span \"heading-number\" \"1\") \" \" \"A\")\n(heading 2 \"b\" \"B\")")
+  (expect "an unnumbered heading has no number, and takes none"
+          (tree "@numbered-headings\n@section{A}\n@section*{Aside}\n@section{B}")
+          (str "(heading 1 \"a\" (span \"heading-number\" \"1\") \" \" \"A\")\n"
+               "(unnumbered-heading 1 \"Aside\")\n"
+               "(heading 1 \"b\" (span \"heading-number\" \"2\") \" \" \"B\")"))
+  (expect "a level passed over is a 0"
+          (tree "@numbered-headings\n@subsection{A}\n@section{B}\n@subsubsection{C}")
+          (str "(heading 2 \"a\" (span \"heading-number\" \"0.1\") \" \" \"A\")\n"
+               "(heading 1 \"b\" (span \"heading-number\" \"1\") \" \" \"B\")\n"
+               "(heading 3 \"c\" (span \"heading-number\" \"1.0.1\") \" \" \"C\")"))
+  (expect "@ref says the number, and may come before the command"
+          (vec-ref (string-split (tree "See @ref[\"later\"].\n@numbered-headings\n@section{First}\n@section[#:id \"later\"]{Later}") "\n") 0)
+          "(para \"See \" (link \"#later\" (span \"heading-number\" \"2\") \" \" \"Later\") \".\")")
+  (expect "an included file's headings are numbered with the rest"
+          (let ((lines (string-split (tree "@numbered-headings\n@section{Before}\n@include[\"tests/fixtures/chapter.sz\"]") "\n")))
+            (list (vec-ref lines 0) (vec-ref lines 1)))
+          (list "(heading 1 \"before\" (span \"heading-number\" \"1\") \" \" \"Before\")"
+                "(heading 1 \"included\" (span \"heading-number\" \"2\") \" \" \"Included\")"))
+  (expect "without it, a table of contents is of class toc alone"
+          (vec-ref (string-split (tree "@toc\n@section{A}") "\n") 0)
+          "(div \"toc\" (bullets (item (para (link \"#a\" \"A\")))))")
+  (expect "said twice" (refusal "@numbered-headings\n@numbered-headings")
+          "post.sz:2:1: @numbered-headings: the headings are numbered already: say it once")
+  (expect "a depth of 0" (refusal "@numbered-headings[#:depth 0]")
+          "post.sz:1:1: @numbered-headings: #:depth is 1 or more, not 0")
+
   ;; --- references -----------------------------------------------------------------
   (expect "@ref says the heading's title, or its own, and may come first"
           (tree "See @ref[\"later\"] and @ref[\"later\"]{this}.\n@section[#:id \"later\"]{The Later One}")
