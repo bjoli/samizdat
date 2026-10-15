@@ -202,14 +202,24 @@
     (KindModule "module")
     ((KindOther s) (symbol->string s))))
 
-;; How a macro is written, and a reader extension: (pair a b) is #pair(a b).
-(: form-text (-> Doc Bjodat string))
+(: drop-prefix (-> string string string))
+(defun (drop-prefix s prefix)
+  (let go ((at (string-cursor-start s)) (n (string-count prefix)))
+    (if (= n 0)
+        (substring s at (string-cursor-end s))
+        (go (string-cursor-next s at) (- n 1)))))
+
+;; How a macro is written, as its source text, and a reader extension:
+;; (pair a b) is #pair(a b).
+(: form-text (-> Doc string string))
 (defun (form-text d form)
-  (match (Tuple (record-ref d subject) form)
-    ((Tuple (SubjectReader _) (BjoList (Cons (BjoSym head) args)))
-     (str "#" (symbol->string head) "("
-          (string-join (list->vec (list-map bjodat->string args)) " ") ")"))
-    (_ (bjodat->string form))))
+  (match (record-ref d subject)
+    ((SubjectReader n)
+     (def head (str "(" (symbol->string n)))
+     (if (string-starts-with? form head)
+         (str "#" (symbol->string n) "(" (string-trim-left (drop-prefix form head)))
+         form))
+    (_ form)))
 
 ;; The code at the head of a doc: the type and the definition's head, or the
 ;; forms a macro is written in.
