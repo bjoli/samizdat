@@ -17,9 +17,10 @@
              (version (version-at-least "0.2.0"))
              (source (git (url "https://github.com/bjoli/markdig-bjolang"))))
     ;; Highlighted code blocks in HTML. It brings TextMateSharp as a NuGet
-    ;; package, with Oniguruma as a native library.
+    ;; package, with Oniguruma as a native library. 0.2.0 declares its themes
+    ;; and styles as grammars, which Bjolang 0.2.0 requires.
     (package (name (textmate-bjolang))
-             (version (version-at-least "0.1.3"))
+             (version (version-at-least "0.2.0"))
              (source (git (url "https://rikspucko.koketteriet.se/bjoli/textmate-bjolang")))))
 
   ;; A library: there is no src/main.bjo, so `bjo build` builds every module

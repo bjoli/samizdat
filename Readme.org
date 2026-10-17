@@ -694,7 +694,9 @@ text, and samizdat's ids are not made the same way. So a link to a heading in
 the document — from ~@ref~, ~@toc~, ~@docref~ — goes to GitHub's id for it:
 ~@section{C# & .NET}~ is ~#c--net~ on GitHub, and the second ~Usage~ is
 ~#usage-1~. ~#:anchors 'html~ instead keeps samizdat's ids, in an ~<a id>~ at
-the start of each heading.
+the start of each heading. ~#:anchors~ is an ~MdAnchors~. Its grammar reads
+~'github~ (the default) or ~'html~. In code, use ~AnchorsGithub~ or
+~AnchorsHtml~.
 
 ~markdown-options~ takes ~#:heading-offset~ (default 1, so a section is a ~##~
 under the page's ~#~), ~#:anchors~, ~#:url-hook~, which rewrites the target of

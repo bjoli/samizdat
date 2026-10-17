@@ -54,8 +54,10 @@
 ;; Options
 ;; ---------------------------------------------------------------------------
 
-(type (: MdAnchors (Union (: AnchorsGithub #:tag github)
-                          (: AnchorsHtml #:tag html))))
+;; How a heading gets its id: `'github` or `'html`.
+(def/grammar MdAnchors
+  (:or (: AnchorsGithub 'github)
+       (: AnchorsHtml 'html)))
 
 (type-rec
   (: Md #:opaque (Record (: offset int)
