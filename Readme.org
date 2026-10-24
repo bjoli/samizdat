@@ -75,6 +75,15 @@ repository and read on GitHub:
 bjo run examples/markdown.bjo docs/index.sz      # writes docs/index.md
 #+END_SRC
 
+~examples/cli.bjo~ is both, with the standard commands only: a page of HTML
+with its code highlighted in inline styles, or Markdown, beside the input or
+on standard output with ~-~.
+
+#+BEGIN_SRC sh
+bjo run examples/cli.bjo html docs/index.sz      # writes docs/index.html
+bjo run examples/cli.bjo md docs/index.sz -      # Markdown to standard output
+#+END_SRC
+
 ** The syntax
 
 #+BEGIN_SRC text
