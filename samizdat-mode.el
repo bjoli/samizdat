@@ -26,10 +26,16 @@
 ;;   C-c C-o   what the command at point names: a link, or a file it reads
 ;;   C-c C-f   fold to the headings; with a prefix argument, the level to show
 ;;   C-c C-a   unfold everything
+;;   C-c C-t   fold the code block at point; with a prefix argument, all of them
 ;;
 ;; `outline-minor-mode' folds sections: TAB on a heading folds and unfolds
 ;; it, S-TAB cycles the whole document, and `C-c @' has the rest of
-;; outline's commands. `imenu' lists the sections.
+;; outline's commands. `imenu' lists the sections. TAB on the line that opens
+;; a code block folds the block, apart from the sections: a section folded
+;; and unfolded leaves its blocks as they were.
+;;
+;; A heading shows only its title, until point is on its line; see
+;; `samizdat-hide-heading-markup'.
 
 ;;; Code:
 
@@ -78,10 +84,25 @@ for `@markdown'. A language not listed here is tried as LANG-ts-mode
 and then LANG-mode."
   :type '(alist :key-type string :value-type function))
 
+(defcustom samizdat-fontify-code-blocks-natively t
+  "Whether a code block is coloured by the mode of its language.
+The language and its mode are found as for \\[samizdat-edit-code-block]:
+the `#:lang', then `samizdat-code-block-modes'. A block whose language
+has no mode, or whose mode is `text-mode' or `fundamental-mode', keeps
+`samizdat-verbatim-face'."
+  :type 'boolean)
+
 (defcustom samizdat-fold-sections t
   "Whether `samizdat-mode' turns on `outline-minor-mode'.
 With it, TAB on a heading line folds and unfolds that section, and
 S-TAB folds the whole document."
+  :type 'boolean)
+
+(defcustom samizdat-hide-heading-markup t
+  "Whether a heading shows only its title.
+The `@section{', `@subsection{' or `@subsubsection{' and the `}' that
+closes the title are hidden, except on the heading point is on, where
+they are shown to be edited."
   :type 'boolean)
 
 (defcustom samizdat-heading-indent 2
@@ -137,6 +158,24 @@ they are."
 (defface samizdat-code-face
   '((t :inherit font-lock-constant-face))
   "The body of an `@code' written with braces.")
+
+(defface samizdat-code-block-face
+  '((((class color) (min-colors 88) (background light)) :background "#f4f4f4" :extend t)
+    (((class color) (min-colors 88) (background dark)) :background "#232323" :extend t)
+    (t :extend t))
+  "Under the whole of a `|{ ... }|' body, as `org-block' is under org's.
+`:extend' takes the background to the edge of the window rather than to
+the end of each line's text. Laid under the body's own colours, so give
+it a background and nothing else, or nothing for no background.")
+
+(defface samizdat-code-block-delimiter-face
+  '((((class color) (min-colors 88) (background light)) :background "#e4e4e4" :extend t)
+    (((class color) (min-colors 88) (background dark)) :background "#333333" :extend t)
+    (t :extend t))
+  "Under the line that opens a code block and the line that closes it.
+They frame the block, as `org-block-begin-line' and `org-block-end-line'
+frame org's. Laid under the command's own colours, as
+`samizdat-code-block-face' is under the code's.")
 
 ;;; ---------------------------------------------------------------------------
 ;;; Syntax
@@ -464,7 +503,11 @@ With META-ONLY, in the meta form only."
     (,(samizdat--data-matcher "(\\(meta\\)[ \t\n)]" t) (1 'font-lock-keyword-face))
     (,(samizdat--data-matcher "(\\([[:alpha:]][^][ \t\n(){}\";]*\\)" t)
      (1 'font-lock-variable-name-face))
-    (samizdat--match-heading-line (0 (samizdat--heading-prefix) prepend)))
+    (samizdat--match-heading-line (0 (samizdat--heading-prefix) prepend))
+    (samizdat--match-heading-markup)
+    ;; Last, so that a block's colours replace the verbatim face the syntactic
+    ;; pass gave it.
+    (samizdat--match-code-block))
   "Font-lock keywords for `samizdat-mode'.")
 
 (defun samizdat--syntactic-face (state)
@@ -478,16 +521,34 @@ With META-ONLY, in the meta form only."
 (defvar font-lock-beg)
 (defvar font-lock-end)
 
+(defun samizdat--verbatim-around (pos)
+  "The bounds of the verbatim body POS is in, from its `|' to past its
+closing `|', or nil."
+  (let ((state (save-excursion (syntax-ppss pos))))
+    (when (and (nth 3 state) (eq (char-after (nth 8 state)) ?|))
+      (let ((bar (nth 8 state)))
+        (cons bar
+              (save-excursion
+                (goto-char (1+ bar))
+                (parse-partial-sexp (point) (point-max) nil nil
+                                    (syntax-ppss (point)) 'syntax-table)
+                (point)))))))
+
 (defun samizdat--extend-region ()
   "Extend the region font lock is about to fontify to whole paragraphs.
 A command's body may run over several lines, and its start has to be in
-the region for its body to be found."
-  (let ((beg (save-excursion
-               (goto-char font-lock-beg)
-               (if (re-search-backward "^[ \t]*$" nil t) (point) (point-min))))
-        (end (save-excursion
-               (goto-char font-lock-end)
-               (if (re-search-forward "^[ \t]*$" nil t) (point) (point-max)))))
+the region for its body to be found. A verbatim body is taken whole,
+blank lines and all, since a code block is coloured all at once."
+  (let* ((beg (save-excursion
+                (goto-char font-lock-beg)
+                (if (re-search-backward "^[ \t]*$" nil t) (point) (point-min))))
+         (end (save-excursion
+                (goto-char font-lock-end)
+                (if (re-search-forward "^[ \t]*$" nil t) (point) (point-max))))
+         (around-beg (samizdat--verbatim-around beg))
+         (around-end (samizdat--verbatim-around end)))
+    (when around-beg (setq beg (min beg (car around-beg))))
+    (when around-end (setq end (max end (cdr around-end))))
     (when (or (< beg font-lock-beg) (> end font-lock-end))
       (setq font-lock-beg (min beg font-lock-beg)
             font-lock-end (max end font-lock-end))
@@ -581,6 +642,55 @@ The match is the whole line."
     (when (> indent 0)
       (let ((prefix (make-string indent ?\s)))
         `(face nil line-prefix ,prefix wrap-prefix ,prefix)))))
+
+;; A heading's markup is hidden by font lock, and shown again on the line
+;; point is on. Font lock cannot ask where point is, since a matcher moves it,
+;; so the line is kept in `samizdat--reveal-line' by a command hook, which also
+;; has the line point left and the line it came to fontified again.
+
+(defvar-local samizdat--reveal-line nil
+  "A marker at the start of the line point was on after the last command.")
+
+(defun samizdat--revealed-p (beg end)
+  "Whether the line point is on meets BEG to END, which are not to be hidden."
+  (and samizdat--reveal-line
+       (marker-buffer samizdat--reveal-line)
+       (let* ((line (marker-position samizdat--reveal-line))
+              (line-end (save-excursion (goto-char line) (line-end-position))))
+         (and (<= line end) (>= line-end beg)))))
+
+(defun samizdat--match-heading-markup (limit)
+  "Hide the markup of each heading before LIMIT that point is not on.
+A font-lock matcher that does its work as it goes, and so matches nothing."
+  (when samizdat-hide-heading-markup
+    (while (samizdat-outline-search limit)
+      (let ((bol (match-beginning 0)))
+        (save-excursion
+          (goto-char bol)
+          (when (looking-at samizdat--section-re)
+            (let* ((at (save-excursion (skip-chars-forward " \t") (point)))
+                   (open (1- (match-end 0)))
+                   (close (save-match-data (samizdat--body-end open))))
+              (when (and close (not (samizdat--revealed-p bol close)))
+                (put-text-property at (1+ open) 'invisible 'samizdat-markup)
+                (put-text-property (1- close) close 'invisible 'samizdat-markup))))))))
+  nil)
+
+(defun samizdat--line-bounds (pos)
+  "The start and the end of the line POS is on, as a list."
+  (save-excursion (goto-char pos) (list (line-beginning-position) (line-end-position))))
+
+(defun samizdat--reveal-point-line ()
+  "Show the markup of the heading point is on, and hide the one it left."
+  (when samizdat-hide-heading-markup
+    (let ((here (line-beginning-position))
+          (was (and samizdat--reveal-line (marker-position samizdat--reveal-line))))
+      (unless (eql here was)
+        (if samizdat--reveal-line
+            (set-marker samizdat--reveal-line here)
+          (setq samizdat--reveal-line (copy-marker here)))
+        (when was (apply #'font-lock-flush (samizdat--line-bounds was)))
+        (apply #'font-lock-flush (samizdat--line-bounds here))))))
 
 (defun samizdat-fold-to-sections (&optional level)
   "Show only the headings, down to LEVEL (default: all of them).
@@ -915,6 +1025,190 @@ when it is returned, as the reader takes it off when it reads it."
         (pop-to-buffer buffer)))))
 
 ;;; ---------------------------------------------------------------------------
+;;; Colouring a code block in its own mode
+
+;; A body is copied into a hidden buffer in its language's mode, fontified
+;; there, and its faces copied back, as org does with `org-src-fontify-natively'.
+;; One buffer per mode, kept, so that a mode is set up once and not at every
+;; redisplay. The mode's hooks are not run: a hook that starts a language
+;; server or a linter has no business with a buffer nobody visits.
+
+(defvar samizdat--fontify-buffers nil
+  "The hidden buffer each mode fontifies code blocks in, as (MODE . BUFFER).")
+
+(defun samizdat--fontify-buffer (mode)
+  "The hidden buffer in MODE, made the first time it is asked for."
+  (let ((buffer (alist-get mode samizdat--fontify-buffers)))
+    (unless (buffer-live-p buffer)
+      (setq buffer (generate-new-buffer (format " *samizdat-fontify %s*" mode)))
+      (with-current-buffer buffer
+        (delay-mode-hooks (funcall mode)))
+      (setf (alist-get mode samizdat--fontify-buffers) buffer))
+    buffer))
+
+(defun samizdat--native-mode (bar)
+  "The mode to colour the body whose `|' is at BAR in, or nil."
+  (let* ((lang (samizdat--block-language bar))
+         (mode (and lang (samizdat--language-mode lang))))
+    (and mode
+         (fboundp mode)
+         (not (memq mode '(fundamental-mode text-mode)))
+         mode)))
+
+(defun samizdat--fontify-natively (mode beg end)
+  "Colour BEG to END of this buffer as MODE colours it."
+  (let ((text (buffer-substring-no-properties beg end))
+        (faces nil))
+    (with-current-buffer (samizdat--fontify-buffer mode)
+      ;; The change hooks run, so that the mode's `syntax-ppss' cache is
+      ;; flushed of the last block.
+      (erase-buffer)
+      (insert text)
+      (font-lock-ensure)
+      (let ((pos (point-min)))
+        (while (< pos (point-max))
+          (let ((next (next-single-property-change pos 'face nil (point-max)))
+                (face (get-text-property pos 'face)))
+            (when face
+              (push (list (1- pos) (1- next) face) faces))
+            (setq pos next)))))
+    ;; The body's own face goes, so that what the mode leaves plain is plain.
+    (remove-text-properties beg end '(face nil))
+    (pcase-dolist (`(,from ,to ,face) faces)
+      (put-text-property (+ beg from) (+ beg to) 'face face))))
+
+(defconst samizdat--verbatim-open-re "|[^[:alnum:][:space:]{}|@]*{"
+  "What opens a verbatim body, as `samizdat--special-re' has it.")
+
+(defun samizdat--match-code-block (limit)
+  "Colour each code block that opens before LIMIT.
+In its language's mode, when `samizdat-fontify-code-blocks-natively'
+says so, and over `samizdat-code-block-face'. A font-lock matcher that
+does its work as it goes, and so matches nothing."
+  (while (re-search-forward samizdat--verbatim-open-re limit t)
+    (let* ((bar (match-beginning 0))
+           (state (save-excursion (syntax-ppss (1+ bar)))))
+      ;; A body only where the propertizer fenced one: not a `|{' in prose,
+      ;; in a comment or inside another body.
+      (when (and (nth 3 state) (eq (nth 8 state) bar))
+        (pcase-let ((`(,_ ,beg ,end) (save-excursion
+                                       (goto-char (1+ bar))
+                                       (samizdat--verbatim-bounds))))
+          (when beg
+            (let ((mode (and samizdat-fontify-code-blocks-natively
+                             (samizdat--native-mode bar))))
+              (when mode
+                (save-match-data (samizdat--fontify-natively mode beg end))))
+            ;; A block, not a `@code|{x}|' in a sentence: one that runs over
+            ;; lines. Appended, so that it is under the code's own faces.
+            (when (save-excursion (goto-char beg) (search-forward "\n" end t))
+              (samizdat--frame-code-block bar beg end))
+            (goto-char (max (point) end)))))))
+  nil)
+
+(defun samizdat--line-after (pos)
+  "Past the newline that ends the line POS is on, or the buffer's end."
+  (save-excursion (goto-char pos) (min (point-max) (1+ (line-end-position)))))
+
+(defvar samizdat-code-block-header-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "TAB") #'samizdat-toggle-code-block)
+    (define-key map (kbd "<tab>") #'samizdat-toggle-code-block)
+    map)
+  "Keys on the line that opens a code block, as on an org block's.
+A text property, so that it is in front of the mode's keys and of evil's
+states, as `outline-minor-mode-cycle' puts its keys on a heading.")
+
+(defun samizdat--frame-code-block (bar beg end)
+  "Lay the code block faces under the body BEG to END, whose `|' is at BAR.
+The line the body opens on and the line it closes on are the frame;
+what is between gets `samizdat-code-block-face'."
+  (let ((header-beg (save-excursion (goto-char bar) (line-beginning-position)))
+        ;; The `{' line's newline is the body's first character. The frame's
+        ;; face goes on it first, so that it is in front of the block's.
+        (header-end (samizdat--line-after beg))
+        (footer-end (samizdat--line-after end)))
+    (font-lock-append-text-property header-beg header-end 'face 'samizdat-code-block-delimiter-face)
+    (font-lock-append-text-property beg end 'face 'samizdat-code-block-face)
+    (font-lock-append-text-property end footer-end 'face 'samizdat-code-block-delimiter-face)
+    (put-text-property header-beg header-end 'keymap samizdat-code-block-header-map)))
+
+;;; ---------------------------------------------------------------------------
+;;; Folding a code block
+
+;; A fold is an overlay of its own, with an `invisible' of its own, so that
+;; outline's folding of sections neither opens nor closes it: a section folded
+;; and unfolded again has its blocks as they were.
+
+(defun samizdat--code-block-at (&optional pos)
+  "The code block at POS, as (BAR BEG END), or nil.
+POS may be in its body or on the line that opens it. A body on one line
+is not a block, and is not folded."
+  (save-excursion
+    (when pos (goto-char pos))
+    (let ((bounds (samizdat--verbatim-bounds)))
+      (and bounds
+           (save-excursion (goto-char (nth 1 bounds)) (search-forward "\n" (nth 2 bounds) t))
+           bounds))))
+
+(defun samizdat--code-block-fold (bar end)
+  "The overlay folding the block whose `|' is at BAR and body ends at END."
+  (seq-find (lambda (o) (eq (overlay-get o 'invisible) 'samizdat-code-block))
+            (overlays-in bar end)))
+
+(defun samizdat--fold-code-block (beg end)
+  "Fold the block whose body runs from BEG to END.
+Everything after its first line is hidden, the line that closes it too,
+and the first line ends in an ellipsis."
+  (let ((ov (make-overlay (save-excursion (goto-char beg) (line-end-position))
+                          (save-excursion (goto-char end) (line-end-position)))))
+    (overlay-put ov 'invisible 'samizdat-code-block)
+    (overlay-put ov 'evaporate t)
+    ;; A search that matches inside opens the fold, as it opens a section.
+    (overlay-put ov 'isearch-open-invisible #'delete-overlay)
+    ov))
+
+(defun samizdat--code-blocks ()
+  "Every code block in the buffer, as (BAR BEG END) lists."
+  (let (blocks)
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward samizdat--verbatim-open-re nil t)
+        (let* ((bar (match-beginning 0))
+               (state (syntax-ppss (1+ bar))))
+          (when (and (nth 3 state) (eq (nth 8 state) bar))
+            (let ((block (samizdat--code-block-at (1+ bar))))
+              (when block
+                (push block blocks)
+                (goto-char (nth 2 block))))))))
+    (nreverse blocks)))
+
+(defun samizdat-toggle-code-block (&optional all)
+  "Fold the code block at point, or unfold it.
+With ALL, as with \\[universal-argument], every code block: folded, or
+unfolded when they all are. Sections are folded apart from this, by
+outline, and leave the blocks in them as they are."
+  (interactive "P")
+  (if all
+      (let* ((blocks (samizdat--code-blocks))
+             (open (seq-remove (lambda (b) (samizdat--code-block-fold (nth 0 b) (nth 2 b))) blocks)))
+        (if open
+            (progn (dolist (b open) (samizdat--fold-code-block (nth 1 b) (nth 2 b)))
+                   (message "Folded %d code blocks" (length blocks)))
+          (dolist (b blocks) (delete-overlay (samizdat--code-block-fold (nth 0 b) (nth 2 b))))
+          (message "Unfolded %d code blocks" (length blocks))))
+    (pcase-let ((`(,bar ,beg ,end) (or (samizdat--code-block-at)
+                                       (user-error "No code block at point"))))
+      (let ((fold (samizdat--code-block-fold bar end)))
+        (if fold
+            (delete-overlay fold)
+          (samizdat--fold-code-block beg end)
+          ;; Point inside the body would be hidden: it goes to the line that
+          ;; is still shown.
+          (when (> (point) (save-excursion (goto-char beg) (line-end-position)))
+            (goto-char bar)))))))
+
+;;; ---------------------------------------------------------------------------
 ;;; The mode
 
 (defvar samizdat-mode-map
@@ -927,6 +1221,7 @@ when it is returned, as the reader takes it off when it reads it."
     (define-key map (kbd "C-c C-o") #'samizdat-open-at-point)
     (define-key map (kbd "C-c C-f") #'samizdat-fold-to-sections)
     (define-key map (kbd "C-c C-a") #'outline-show-all)
+    (define-key map (kbd "C-c C-t") #'samizdat-toggle-code-block)
     map)
   "Keymap for `samizdat-mode'.")
 
@@ -947,7 +1242,10 @@ when it is returned, as the reader takes it off when it reads it."
   (add-hook 'font-lock-extend-region-functions #'samizdat--extend-region nil t)
   (setq-local font-lock-multiline t)
   (setq-local font-lock-extra-managed-props
-              (append '(line-prefix wrap-prefix) font-lock-extra-managed-props))
+              (append '(line-prefix wrap-prefix invisible keymap) font-lock-extra-managed-props))
+  (add-to-invisibility-spec 'samizdat-markup)
+  (add-to-invisibility-spec '(samizdat-code-block . t))
+  (add-hook 'post-command-hook #'samizdat--reveal-point-line nil t)
   (setq-local comment-start "@; ")
   (setq-local comment-end "")
   (setq-local comment-start-skip "@;+[ \t]*")
