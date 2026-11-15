@@ -72,7 +72,7 @@
 (re-export Node xml-text)
 
 (import (std prelude))
-(import (only (std hashset) list->hashset hashset-contains?))
+(import (only (std hashset) HashSet list->hashset hashset-contains?))
 (import (only (text xml) Node XmlAttrs XmlName xml-name xml-name-local xml-name-ns xml-element xml-text element-view
               text? text-value comment? comment-value text-content))
 (import (only (textmate-bjolang core) TmHighlighter TmStyleMode code->node))
