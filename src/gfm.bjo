@@ -133,7 +133,7 @@
 ;; and the space after the last.
 (: edges (-> string (Tuple string string string)))
 (defun (edges s)
-  (match (string-index (fun (c) (not (char-whitespace? c))) s)
+  (match (string-find (fun (c) (not (char-whitespace? c))) s)
     (None (Tuple s "" ""))
     ((Some from)
      (def to (let back ((at (string-cursor-end s)))
@@ -234,7 +234,7 @@
         line
         (let ((c (string-cursor-ref line at)))
           (cond ((ascii-digit? c) (go (string-cursor-next line at) (+ n 1)))
-                ((and (<= n 9) (or (char=? c #\.) (char=? c (integer->char 41))))
+                ((and (<= n 9) (or (char=? c #\.) (char=? c (int->char 41))))
                  (str (substring line (string-cursor-start line) at) "\\" (substring line at (string-cursor-end line))))
                 (else line))))))
 
@@ -261,18 +261,18 @@
 (: headings-of (-> (Vec Block) (Vec (Tuple string string))))
 (defun (headings-of bs)
   (vec-fold (fun (b out)
-              (vec-merge out (match b
+              (vec-append out (match b
                                ((Heading level id xs) [(Tuple id (inlines->text xs))])
                                ((UnnumberedHeading level xs) [(Tuple "" (inlines->text xs))])
                                ((Quote inner) (headings-of inner))
                                ((Div c inner) (headings-of inner))
                                ((ItemList numbered start items)
-                                (vec-fold (fun (item acc) (vec-merge acc (headings-of item))) (vec-empty) items))
+                                (vec-fold (fun (item acc) (vec-append acc (headings-of item))) (vec-empty) items))
                                ((DefinitionList entries)
                                 (vec-fold (fun (entry acc)
                                             (match entry
                                               ((Tuple term defs)
-                                               (vec-fold (fun (d more) (vec-merge more (headings-of d))) acc defs))))
+                                               (vec-fold (fun (d more) (vec-append more (headings-of d))) acc defs))))
                                           (vec-empty) entries))
                                (_ (vec-empty)))))
             (vec-empty) bs))
@@ -348,9 +348,9 @@
                   None
                   (match (Tuple (vec-ref out (- n 1)) x)
                     ((Tuple (Str a) (Str b)) (Some (Str (str a b))))
-                    ((Tuple (Emph a) (Emph b)) (Some (Emph (vec-merge a b))))
-                    ((Tuple (Strong a) (Strong b)) (Some (Strong (vec-merge a b))))
-                    ((Tuple (Strike a) (Strike b)) (Some (Strike (vec-merge a b))))
+                    ((Tuple (Emph a) (Emph b)) (Some (Emph (vec-append a b))))
+                    ((Tuple (Strong a) (Strong b)) (Some (Strong (vec-append a b))))
+                    ((Tuple (Strike a) (Strike b)) (Some (Strike (vec-append a b))))
                     (_ None))))
   (match merged
     ((Some y) (vec-set out (- n 1) y))
@@ -594,7 +594,7 @@
 (defun (line-block-md h lines)
   (para-md h (loop (:for line lines)
                    (:for i (up-from 0))
-                   (:acc out (folding (vec-empty) (vec-merge (if (= i 0) out (vec-add out LineBreak)) line))))))
+                   (:acc out (folding (vec-empty) (vec-append (if (= i 0) out (vec-add out LineBreak)) line))))))
 
 ;; Links in a term go where the document's links go.
 (: retarget (-> Md (Vec Inline) (Vec Inline)))
@@ -620,7 +620,7 @@
     (vec-fold (fun (entry out)
                 (match entry
                   ((Tuple term defs)
-                   (vec-merge (vec-add out (str "<dt>" (inlines->html default-html (retarget h term)) "</dt>"))
+                   (vec-append (vec-add out (str "<dt>" (inlines->html default-html (retarget h term)) "</dt>"))
                               (vec-map (fun (d)
                                          (def inner (blocks->markdown h d))
                                          (if (string-empty? inner) "<dd></dd>" (str "<dd>\n\n" inner "\n\n</dd>")))
@@ -655,9 +655,9 @@
 (defun (table-md h t)
   (def aligns (record-ref t aligns))
   (def head (record-ref t head))
-  (def rest (vec-merge (if (vec-empty? head) (vec-empty) (vec-remove-at head 0))
-                       (vec-fold (fun (group acc) (vec-merge acc group)) (vec-empty) (record-ref t bodies))))
-  (def columns (vec-fold (fun (r w) (max w (vec-length r))) (vec-length aligns) (vec-merge head rest)))
+  (def rest (vec-append (if (vec-empty? head) (vec-empty) (vec-remove-at head 0))
+                       (vec-fold (fun (group acc) (vec-append acc group)) (vec-empty) (record-ref t bodies))))
+  (def columns (vec-fold (fun (r w) (max w (vec-length r))) (vec-length aligns) (vec-append head rest)))
   (def cells (fun (r) (loop (:for i (range 0 columns))
                             (:acc (vecing (if (< i (vec-length r)) (cell-md h (vec-ref r i)) ""))))))
   (def top (cells (if (vec-empty? head) (vec-empty) (vec-ref head 0))))
@@ -678,7 +678,7 @@
                                     (:acc (vecing (rule-cell (vec-ref widths i) (align-at aligns i)))))
                               " | ")
                  " |"))
-  (def table (string-join (vec-merge [(row top) rule] (vec-map row body)) "\n"))
+  (def table (string-join (vec-append [(row top) rule] (vec-map row body)) "\n"))
   (def caption (record-ref t caption))
   (cond ((= columns 0) "")
         ((vec-empty? caption) table)
@@ -757,9 +757,9 @@
 ;; when it numbers ids.
 (: body-md (-> Document Md (Vec string) string))
 (defun (body-md doc with titles)
-  (def headings (vec-merge (vec-merge (vec-map (fun (t) (Tuple "" t)) titles)
+  (def headings (vec-append (vec-append (vec-map (fun (t) (Tuple "" t)) titles)
                                       (headings-of (record-ref doc blocks)))
-                           (vec-fold (fun (note acc) (vec-merge acc (headings-of note)))
+                           (vec-fold (fun (note acc) (vec-append acc (headings-of note)))
                                      (vec-empty) (record-ref doc notes))))
   (def h (with-slugs with (slug-map headings)))
   (def body (blocks->markdown h (record-ref doc blocks)))

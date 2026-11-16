@@ -140,7 +140,7 @@
 (defun (add-words parts joint content)
   (def last (- (vec-length parts) 1))
   (match (vec-ref parts last)
-    ((Words ws) (vec-set parts last (Words (vec-merge (vec-add ws (Text joint)) content))))
+    ((Words ws) (vec-set parts last (Words (vec-append (vec-add ws (Text joint)) content))))
     (_ (vec-add parts (Words content)))))
 
 ;; The list whose first item is the bullet at `start`, indented `indent`:
@@ -193,7 +193,7 @@
   (loop (:for p parts)
         (:acc out (folding (vec-empty)
                            (match p
-                             ((Words ws) (vec-merge out (items->blocks cx ws)))
+                             ((Words ws) (vec-append out (items->blocks cx ws)))
                              ((Sublist numbered items) (vec-add out (list->block cx numbered items))))))))
 
 ;; ---------------------------------------------------------------------------
@@ -297,7 +297,7 @@
 ;; `\|` is kept out of the way of the split as a character from the private
 ;; use area, and put back in each cell.
 (: kept-pipe string)
-(def kept-pipe (char->string (integer->char 57344)))
+(def kept-pipe (char->string (int->char 57344)))
 
 (: unpipe (-> string string))
 (defun (unpipe s) (string-replace s kept-pipe "|"))
@@ -485,8 +485,8 @@
          (let* ((head (if headed (vec-ref groups 0) (vec-empty)))
                 (bodies (if headed (vec-remove-at groups 0) groups))
                 (body-rows (loop (:for g bodies)
-                                 (:acc rows (folding (vec-empty) (vec-merge rows g)))))
-                (columns (loop (:for row (vec-merge head body-rows))
+                                 (:acc rows (folding (vec-empty) (vec-append rows g)))))
+                (columns (loop (:for row (vec-append head body-rows))
                                (:acc widest (folding 0 (if (> (vec-length row) widest) (vec-length row) widest)))))
                 (asked (loop (:for line lines)
                              (:acc so-far (folding (vec-empty)
@@ -508,7 +508,7 @@
                                                                           ((CaptionLine more)
                                                                            (if (vec-empty? words)
                                                                                more
-                                                                               (vec-merge (vec-add words (Text " ")) more)))
+                                                                               (vec-append (vec-add words (Text " ")) more)))
                                                                           (_ words))))))
                              [(Str caption-text)]))
                 (cells-of (fun (row) (vec-map (fun (cell) (items->inlines cx c cell)) (padded columns row)))))

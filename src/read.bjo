@@ -281,7 +281,7 @@
 
 (: items-of (-> (Parser (Vec At)) (Parser (Vec At))))
 (defun (items-of item)
-  (many-fold (fun (more acc) (vec-merge acc more)) (vec-empty) item))
+  (many-fold (fun (more acc) (vec-append acc more)) (vec-empty) item))
 
 ;; What a `{...}` body holds: text, commands, and balanced braces as text.
 (: braced-items (Parser (Vec At)))
@@ -294,7 +294,7 @@
 (def brace-group
   (tie! brace-group-ref
         (ppipe3 (pchar #\{) braced-items (plabel (pchar #\}) "'}'")
-                (fun (o inner c) (vec-merge (one (Text "{")) (vec-add inner (Text "}")))))))
+                (fun (o inner c) (vec-append (one (Text "{")) (vec-add inner (Text "}")))))))
 
 (: braced-body (Parser (Vec At)))
 (def braced-body
@@ -342,7 +342,7 @@
                         (many-chars1 (verbatim-char escape open close)))
                   (ppipe2 (pleft pposition (pstring escape)) (pforwarded after-at-ref) placed)
                   (ppipe3 (pstring open) (plazy (fun () (verbatim-items p))) (pstring close)
-                          (fun (o inner c) (vec-merge (one (Text o)) (vec-add inner (Text c)))))))))
+                          (fun (o inner c) (vec-append (one (Text o)) (vec-add inner (Text c)))))))))
 
 ;; `|` and the punctuation, when a `{` follows them. Nothing is consumed
 ;; otherwise, so a `|` after a command is text.
@@ -416,7 +416,7 @@
 ;; A byte order mark is dropped, and a line may end in \r\n.
 (: clean (-> string string))
 (defun (clean text)
-  (def bom (char->string (integer->char 65279)))
+  (def bom (char->string (int->char 65279)))
   (string-replace (if (string-starts-with? text bom) (.Substring text 1) text) "\r\n" "\n"))
 
 ;; Reads a document. `#:name` is what a message calls it: the file's name,
@@ -533,7 +533,7 @@
   (merge-texts
     (loop (:for i (range 0 (vec-length lines)))
           (:acc out (folding (vec-empty)
-                             (vec-merge (if (= i 0) out (vec-add out (Text "\n")))
+                             (vec-append (if (= i 0) out (vec-add out (Text "\n")))
                                         (vec-ref lines i)))))))
 
 ;; A body of more than one line: a blank first line (the one the `{` ends)

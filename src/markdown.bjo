@@ -42,10 +42,10 @@
 ;; use area, which Markdown gives no meaning, around digits.
 
 (: token-open string)
-(def token-open (char->string (integer->char 57345)))
+(def token-open (char->string (int->char 57345)))
 
 (: token-close string)
-(def token-close (char->string (integer->char 57346)))
+(def token-close (char->string (int->char 57346)))
 
 (: token (-> int string))
 (defun (token n) (str token-open (int->string n) token-close))
@@ -114,7 +114,7 @@
                                            (refuse (record-ref md cx) (vec-ref (record-ref md calls) n)
                                                    "makes a block, and stands in running Markdown text; give it a paragraph of its own"))
                                           (_ unit))))
-                             (add-str (vec-merge out made) rest))))))
+                             (add-str (vec-append out made) rest))))))
 
 ;; Text where only text will do — code, an address: a command's text.
 (: plain (-> Md string string))
@@ -202,7 +202,7 @@
 (: blocks-of (-> Md (Vec MdBlock) (Vec Block)))
 (defun (blocks-of md bs)
   (loop (:for b bs)
-        (:acc out (folding (vec-empty) (vec-merge out (block-of md b))))))
+        (:acc out (folding (vec-empty) (vec-append out (block-of md b))))))
 
 (: align-of (-> MdAlign Align))
 (defun (align-of a)

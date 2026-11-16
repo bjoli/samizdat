@@ -237,7 +237,7 @@
                                       (match cl
                                         ((DocForm f) (vec-add out (form-text d f)))
                                         (_ out))))))
-  (string-join (vec-merge (vec-merge signature definition) forms) "\n"))
+  (string-join (vec-append (vec-append signature definition) forms) "\n"))
 
 (: sym-code (-> Symbol Inline))
 (defun (sym-code s) (Code (symbol->string s)))
@@ -265,13 +265,13 @@
 
 (: see-para (-> Ctx ApiModule (List Symbol) (Vec Piece)))
 (defun (see-para cx m names)
-  (vec-merge
+  (vec-append
     (inline (Str "See also: "))
     (defer-inlines cx (fun (doc)
                         (loop (:with first #t #f)
                               (:for n names)
                               (:acc out (folding (vec-empty)
-                                                 (vec-merge (if first out (vec-add out (Str ", ")))
+                                                 (vec-append (if first out (vec-add out (Str ", ")))
                                                             (see-inline cx m n doc)))))))))
 
 ;; The body of a doc: summary, terms, examples, the long text, related names.
@@ -293,22 +293,22 @@
                       (:acc out (folding (vec-empty)
                                          (match cl
                                            ((DocLiteral ns)
-                                            (vec-add out (Para (vec-merge [(Str "Literally: ")]
+                                            (vec-add out (Para (vec-append [(Str "Literally: ")]
                                                                           (list->vec (list-map sym-code ns))))))
                                            (_ out))))))
   (def rest (loop (:for cl clauses)
                   (:acc out (folding (vec-empty)
                                      (match cl
                                        ((DocExample t) (vec-add out (CodeBlock "bjolang" t)))
-                                       ((DocReference t) (vec-merge out (markup-blocks cx c t)))
+                                       ((DocReference t) (vec-append out (markup-blocks cx c t)))
                                        (_ out))))))
   (def see (loop (:for cl clauses)
                  (:acc out (folding (vec-empty)
                                     (match cl
                                       ((DocSee ns) (vec-add out (items->see cx m ns)))
                                       (_ out))))))
-  (vec-merge (vec-merge (vec-merge summary (if (vec-empty? terms) [] [(DefinitionList terms)]))
-                        (vec-merge literals rest))
+  (vec-append (vec-append (vec-append summary (if (vec-empty? terms) [] [(DefinitionList terms)]))
+                        (vec-append literals rest))
              see))
 
 (: items->see (-> Ctx ApiModule (List Symbol) Block))
@@ -332,11 +332,11 @@
   (state-set! cx key (BjoStr id))
   (def code (code-of d))
   (Div "doc-entry"
-       (vec-merge (vec-merge [(Heading level id [(Code name)])
-                              (Para (vec-merge [(Span "doc-kind" [(Str (kind-name (record-ref d kind)))])]
+       (vec-append (vec-append [(Heading level id [(Code name)])
+                              (Para (vec-append [(Span "doc-kind" [(Str (kind-name (record-ref d kind)))])]
                                                beside))]
                              (if (string-empty? code) [] [(CodeBlock "bjolang" code)]))
-                  (vec-merge (doc-blocks cx c m d) extra))))
+                  (vec-append (doc-blocks cx c m d) extra))))
 
 ;; ---------------------------------------------------------------------------
 ;; The commands
@@ -355,7 +355,7 @@
   (def own (match (module-doc (docs-of cx c m))
              ((Some d) (doc-blocks cx c m d))
              (None (vec-empty))))
-  (block (Div "doc-module" (vec-merge own (expand-blocks cx c)))))
+  (block (Div "doc-module" (vec-append own (expand-blocks cx c)))))
 
 ;; @defdoc[random-int]{...}: that definition's doc, then the body. #:module
 ;; names another module than @defmodule's; #:level the heading's level, 4
@@ -379,7 +379,7 @@
         (:acc out (folding (vec-empty)
                            (match (record-ref d subject)
                              (SubjectModule out)
-                             (_ (vec-merge out (block (entry-blocks cx c m d level (vec-empty) (vec-empty))))))))))
+                             (_ (vec-append out (block (entry-blocks cx c m d level (vec-empty) (vec-empty))))))))))
 
 ;; The module #:module or #:path names, as `module-of` takes it: "std
 ;; datetime", with or without its parentheses, is a name; a path is a string.
@@ -484,21 +484,21 @@
           (:acc out (folding (vec-empty)
                              (match group
                                ((Tuple g (Tuple id listed) entries)
-                                (vec-merge out [(Para [(Anchor listed) (Link (str "#" id) [(Strong [(Str g)])])])
+                                (vec-append out [(Para [(Anchor listed) (Link (str "#" id) [(Strong [(Str g)])])])
                                                 (ItemList #f 1 (group-index cx m docs g))])))))))
   (def sections
     (loop (:for group groups)
           (:acc out (folding (vec-empty)
                              (match group
                                ((Tuple g (Tuple id listed) entries)
-                                (vec-merge (vec-add out (Heading 2 id [(Str g)])) entries)))))))
+                                (vec-append (vec-add out (Heading 2 id [(Str g)])) entries)))))))
   (def top [(Para [(Link (str "#" reference-id) [(Str "Reference")])])
             (Heading 1 overview-id [(Str "Overview")])
-            (Div "doc-module" (vec-merge own (expand-blocks cx c)))
+            (Div "doc-module" (vec-append own (expand-blocks cx c)))
             (Heading 1 reference-id [(Str "Reference")])
             (Div "doc-index" index)])
-  (loop (:for b (vec-merge top sections))
-        (:acc out (folding (vec-empty) (vec-merge out (block b))))))
+  (loop (:for b (vec-append top sections))
+        (:acc out (folding (vec-empty) (vec-append out (block b))))))
 
 ;; @docref[random-int], or @docref[random-int]{text}: a link to the definition
 ;; where the document shows it, before or after. A name the module has no doc

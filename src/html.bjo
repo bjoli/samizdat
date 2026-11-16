@@ -239,7 +239,7 @@
 (: inline-vec (-> Html (Vec Inline) (Vec Node)))
 (defun (inline-vec h xs)
   (loop (:for x xs)
-        (:acc out (folding (vec-empty) (vec-merge out (inline-nodes h x))))))
+        (:acc out (folding (vec-empty) (vec-append out (inline-nodes h x))))))
 
 (: inlines->nodes (-> Html (Vec Inline) (List Node)))
 (defun (inlines->nodes h xs) (vec->list (inline-vec h xs)))
@@ -289,7 +289,7 @@
 (: block-vec (-> Html (Vec Block) (Vec Node)))
 (defun (block-vec h bs)
   (loop (:for b bs)
-        (:acc out (folding (vec-empty) (vec-merge out (block-nodes h b))))))
+        (:acc out (folding (vec-empty) (vec-append out (block-nodes h b))))))
 
 (: blocks->nodes (-> Html (Vec Block) (List Node)))
 (defun (blocks->nodes h bs) (vec->list (block-vec h bs)))
@@ -326,7 +326,7 @@
                (vec->list
                  (if (tight? item)
                      (match (vec-ref item 0)
-                       ((Para xs) (vec-merge (inline-vec h xs) (block-vec h (vec-remove-at item 0))))
+                       ((Para xs) (vec-append (inline-vec h xs) (block-vec h (vec-remove-at item 0))))
                        (_ (block-vec h item)))
                      (block-vec h item)))))
 
@@ -348,7 +348,7 @@
   (def kids (loop (:for line lines)
                   (:for i (up-from 0))
                   (:acc out (folding (vec-empty)
-                                     (vec-merge (if (= i 0) out (vec-merge out [(xml-element br-tag Nil Nil) (xml-text "\n")]))
+                                     (vec-append (if (= i 0) out (vec-append out [(xml-element br-tag Nil Nil) (xml-text "\n")]))
                                                 (inline-vec h line))))))
   (xml-element div-tag (list (Tuple class-attr "line-block")) (vec->list kids)))
 
@@ -358,7 +358,7 @@
                   (:acc out (folding (vec-empty)
                                      (match entry
                                        ((Tuple term defs)
-                                        (vec-merge (vec-add out (xml-element dt-tag Nil (inlines->nodes h term)))
+                                        (vec-append (vec-add out (xml-element dt-tag Nil (inlines->nodes h term)))
                                                    (vec-map (fun (d) (item-node h dd-tag d)) defs))))))))
   (xml-element dl-tag Nil (vec->list kids)))
 
@@ -395,8 +395,8 @@
   (def caption (record-ref t caption))
   (def head (record-ref t head))
   (def parts
-    (vec-merge
-      (vec-merge (if (vec-empty? caption) (vec-empty) [(xml-element caption-tag Nil (inlines->nodes h caption))])
+    (vec-append
+      (vec-append (if (vec-empty? caption) (vec-empty) [(xml-element caption-tag Nil (inlines->nodes h caption))])
                  (if (vec-empty? head) (vec-empty) [(xml-element thead-tag Nil (rows h th-tag aligns head))]))
       (vec-map (fun (group) (xml-element tbody-tag Nil (rows h td-tag aligns group))) (record-ref t bodies))))
   (xml-element table-tag Nil (vec->list parts)))
@@ -442,7 +442,7 @@
         (match (vec-ref blocks (- count 1))
           ((Para xs)
            (vec-add (block-vec h (vec-remove-at blocks (- count 1)))
-                    (xml-element p-tag Nil (vec->list (vec-merge (inline-vec h xs) [(xml-text " ") back])))))
+                    (xml-element p-tag Nil (vec->list (vec-append (inline-vec h xs) [(xml-text " ") back])))))
           (_ (vec-add (block-vec h blocks) back)))))
   (xml-element li-tag (list (Tuple id-attr (id h (str "note-" k)))) (vec->list body)))
 

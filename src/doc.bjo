@@ -201,21 +201,21 @@
         (:acc out (folding (vec-empty)
                            (match b
                              ((Heading level id xs) (vec-add out (Tuple level id xs)))
-                             ((Quote inner) (vec-merge out (headings-in inner)))
-                             ((Div c inner) (vec-merge out (headings-in inner)))
+                             ((Quote inner) (vec-append out (headings-in inner)))
+                             ((Div c inner) (vec-append out (headings-in inner)))
                              ((ItemList numbered start items)
-                              (vec-merge out (loop (:for item items)
+                              (vec-append out (loop (:for item items)
                                                    (:acc more (folding (vec-empty)
-                                                                       (vec-merge more (headings-in item)))))))
+                                                                       (vec-append more (headings-in item)))))))
                              ((DefinitionList entries)
-                              (vec-merge out (loop (:for entry entries)
+                              (vec-append out (loop (:for entry entries)
                                                    (:acc more (folding (vec-empty)
                                                                        (match entry
                                                                          ((Tuple term defs)
-                                                                          (vec-merge more
+                                                                          (vec-append more
                                                                                      (loop (:for def defs)
                                                                                            (:acc inner (folding (vec-empty)
-                                                                                                                (vec-merge inner (headings-in def)))))))))))))
+                                                                                                                (vec-append inner (headings-in def)))))))))))))
                              (_ out))))))
 
 ;; ---------------------------------------------------------------------------
@@ -259,7 +259,7 @@
                           (:acc (vecing (let ((n (if (< i (vec-length last)) (vec-ref last i) 0)))
                                           (if (= i k) (+ n 1) n))))))
            (box-set! counters now)
-           (Heading level id (vec-merge [(Span "heading-number" [(Str (string-join (vec-map int->string now) "."))])
+           (Heading level id (vec-append [(Span "heading-number" [(Str (string-join (vec-map int->string now) "."))])
                                          (Str " ")]
                                         xs)))))
     ((Quote inner) (Quote (number-in inner depth top counters)))
@@ -349,11 +349,11 @@
   (match b
     ((Para xs) (form "para" (vec-map inline->sexp xs)))
     ((Heading level id xs)
-     (form "heading" (vec-merge [(int->string level) (quoted id)] (vec-map inline->sexp xs))))
+     (form "heading" (vec-append [(int->string level) (quoted id)] (vec-map inline->sexp xs))))
     ((UnnumberedHeading level xs)
-     (form "unnumbered-heading" (vec-merge [(int->string level)] (vec-map inline->sexp xs))))
+     (form "unnumbered-heading" (vec-append [(int->string level)] (vec-map inline->sexp xs))))
     ((Figure src alt xs)
-     (form "figure" (vec-merge [(quoted src) (quoted alt)] (vec-map inline->sexp xs))))
+     (form "figure" (vec-append [(quoted src) (quoted alt)] (vec-map inline->sexp xs))))
     ((CodeBlock lang text) (form "codeblock" [(quoted lang) (quoted text)]))
     ((Quote bs) (form "quote" (vec-map block->sexp bs)))
     ((ItemList numbered start items)
@@ -367,7 +367,7 @@
                       (match entry
                         ((Tuple term defs)
                          (form "entry"
-                               (vec-merge [(form "term" (vec-map inline->sexp term))]
+                               (vec-append [(form "term" (vec-map inline->sexp term))]
                                           (vec-map (fun (def) (form "def" (vec-map block->sexp def))) defs))))))
                     entries)))
     (Rule "(rule)")
@@ -384,7 +384,7 @@
   (def parts (vec-add (vec-empty) (form "aligns" (vec-map align->string (record-ref t aligns)))))
   (def captioned (if (vec-empty? caption) parts (vec-add parts (form "caption" (vec-map inline->sexp caption)))))
   (def headed (if (vec-empty? head) captioned (vec-add captioned (form "head" (vec-map row->sexp head)))))
-  (form "table" (vec-merge headed (vec-map (fun (group) (form "body" (vec-map row->sexp group)))
+  (form "table" (vec-append headed (vec-map (fun (group) (form "body" (vec-map row->sexp group)))
                                            (record-ref t bodies)))))
 
 (: row->sexp (-> (Vec (Vec Inline)) string))

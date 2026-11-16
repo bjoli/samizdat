@@ -143,7 +143,7 @@
 (: expand-items (-> Ctx (Vec At) (Vec Piece)))
 (defun (expand-items cx items)
   (loop (:for item items)
-        (:acc out (folding (vec-empty) (vec-merge out (expand-item cx item))))))
+        (:acc out (folding (vec-empty) (vec-append out (expand-item cx item))))))
 
 (: expand-item (-> Ctx At (Vec Piece)))
 (defun (expand-item cx item)
@@ -394,7 +394,7 @@
       (match (vec-ref args i)
         ((BjoKey k)
          (def name (keyword-name k))
-         (unless (vec-contains names name)
+         (unless (vec-contains? names name)
            (refuse cx c (str "takes no #:" name
                            (if (vec-empty? names)
                                ""
@@ -526,7 +526,7 @@
 ;; answers.
 
 (: later-mark string)
-(def later-mark (str (char->string (integer->char 0)) "later:"))
+(def later-mark (str (char->string (int->char 0)) "later:"))
 
 (: later-class (-> int string))
 (defun (later-class n) (str later-mark (int->string n)))
@@ -581,7 +581,7 @@
 (: resolve-blocks (-> Ctx Document (Vec int) (Vec Block) (Vec Block)))
 (defun (resolve-blocks cx doc active bs)
   (loop (:for b bs)
-        (:acc out (folding (vec-empty) (vec-merge out (resolve-block cx doc active b))))))
+        (:acc out (folding (vec-empty) (vec-append out (resolve-block cx doc active b))))))
 
 (: resolve-block (-> Ctx Document (Vec int) Block (Vec Block)))
 (defun (resolve-block cx doc active b)
@@ -589,7 +589,7 @@
     ((Div class bs)
      (match (later-number class)
        ((Some n)
-        (if (vec-contains active n)
+        (if (vec-contains? active n)
             (vec-empty)
             (match (vec-ref (record-ref cx later) n)
               ((Tuple source (LaterBlocks make))
@@ -617,7 +617,7 @@
 (: resolve-inlines (-> Ctx Document (Vec int) (Vec Inline) (Vec Inline)))
 (defun (resolve-inlines cx doc active xs)
   (loop (:for x xs)
-        (:acc out (folding (vec-empty) (vec-merge out (resolve-inline cx doc active x))))))
+        (:acc out (folding (vec-empty) (vec-append out (resolve-inline cx doc active x))))))
 
 (: resolve-inline (-> Ctx Document (Vec int) Inline (Vec Inline)))
 (defun (resolve-inline cx doc active x)
@@ -625,7 +625,7 @@
     ((Span class xs)
      (match (later-number class)
        ((Some n)
-        (if (vec-contains active n)
+        (if (vec-contains? active n)
             (vec-empty)
             (match (vec-ref (record-ref cx later) n)
               ((Tuple source (LaterInlines make))
@@ -670,7 +670,7 @@
 ;; knows to make it again when the file changes.
 (: add-source! (-> Ctx string void))
 (defun (add-source! cx file)
-  (unless (vec-contains (record-ref cx sources) file)
+  (unless (vec-contains? (record-ref cx sources) file)
     (record-set! cx (sources (vec-add (record-ref cx sources) file)))))
 
 ;; The document at `path`, expanded where the command is, as if its text were
@@ -681,7 +681,7 @@
 (defun (include-file cx c path)
   (def full (relative-path cx path))
   (def chain (record-ref cx including))
-  (when (vec-contains (vec-map path-absolute chain) (path-absolute full))
+  (when (vec-contains? (vec-map path-absolute chain) (path-absolute full))
     (refuse cx c (str full " is already being included: "
                       (string-join (vec-add chain full) " -> "))))
   (def text (read-relative cx c path))
