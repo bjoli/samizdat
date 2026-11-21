@@ -22,8 +22,9 @@
     ;; and styles as grammars, which Bjolang 0.2.0 requires. 0.2.1 names the
     ;; type its only list uses, which Bjolang requires since only filters types.
     ;; 0.2.3 uses vec-append and vec-contains?, as Bjolang names them.
+    ;; 0.2.4 uses option-ref-or, Bjolang 0.3.0's name for option-value.
     (package (name (textmate-bjolang))
-             (version (version-at-least "0.2.3"))
+             (version (version-at-least "0.2.4"))
              (source (git (url "https://rikspucko.koketteriet.se/bjoli/textmate-bjolang")))))
 
   ;; A library: there is no src/main.bjo, so `bjo build` builds every module
