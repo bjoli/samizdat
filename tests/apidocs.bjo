@@ -7,7 +7,7 @@
 ;;     bjo run tests/apidocs.bjo
 ;;
 ;; The module shown is tests/fixtures/apidoc-lib.bjo, which this file imports
-;; so that building the test builds its dll. A module by name is (janitor
+;; so that building the test builds its dll. A module by name is (bjo
 ;; docs), which every installation has.
 
 (import (std prelude))
@@ -76,15 +76,15 @@
           (vec-ref (string-split (tree (str lib "@docref[Point] and @docref[with-twice]{the macro}\n@defdocs")) "\n") 1)
           "(para (link \"#apidoc-lib-point\" (code \"Point\")) \" and \" (link \"#apidoc-lib-with-twice\" \"the macro\"))")
 
-  (def by-name (tree "@defmodule[(janitor docs)]\n@docref[module-docs]\n@defdoc[module-docs]"))
+  (def by-name (tree "@defmodule[(bjo docs)]\n@docref[module-docs]\n@defdoc[module-docs]"))
   (expect "a module by name, found in the installed library"
           (vec-ref (string-split by-name "\n") 1)
-          "(para (link \"#janitor-docs-module-docs\" (code \"module-docs\")))")
+          "(para (link \"#bjo-docs-module-docs\" (code \"module-docs\")))")
   (expect "its definition's code"
           (string-contains? by-name "(codeblock \"bjolang\" \"(: module-docs (-> (List PackageRoot) (List Symbol) (Result string (Vec Doc))))\\n(module-docs roots name)\")")
           #t)
   (expect "#:module names another module than @defmodule's"
-          (string-starts-with? (tree (str lib "@defdoc[module-docs #:module (janitor docs)]"))
+          (string-starts-with? (tree (str lib "@defdoc[module-docs #:module (bjo docs)]"))
                                "(div \"doc-module\" (para \"Things to")
           #t)
 
@@ -119,12 +119,12 @@
                 (string-starts-with? (vec-ref page 10) "(div \"doc-entry\" (heading 3 \"apidoc-lib-with-twice\""))
           (list #t #t #t #t #t #t))
   (expect "a module by name, with or without its parentheses"
-          (list (string-contains? (tree "@generate-docs[#:module \"janitor docs\"]") "(heading 3 \"janitor-docs-module-docs\"")
-                (string-contains? (tree "@generate-docs[#:module \"(janitor docs)\"]") "(heading 3 \"janitor-docs-module-docs\""))
+          (list (string-contains? (tree "@generate-docs[#:module \"bjo docs\"]") "(heading 3 \"bjo-docs-module-docs\"")
+                (string-contains? (tree "@generate-docs[#:module \"(bjo docs)\"]") "(heading 3 \"bjo-docs-module-docs\""))
           (list #t #t))
   (expect "the page's module is @docref's"
-          (string-contains? (tree "@generate-docs[#:module \"janitor docs\"]\n@docref[doc-named]")
-                            "(para (link \"#janitor-docs-doc-named\" (code \"doc-named\")))")
+          (string-contains? (tree "@generate-docs[#:module \"bjo docs\"]\n@docref[doc-named]")
+                            "(para (link \"#bjo-docs-doc-named\" (code \"doc-named\")))")
           #t)
   (expect "neither #:module nor #:path" (refusal "@generate-docs")
           "tests/post.sz:1:1: @generate-docs: needs #:module \"std datetime\" or #:path \"the/module.bjo\"")

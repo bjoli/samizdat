@@ -15,7 +15,7 @@
 ;;     @docref[random-int]{...}        a link to a definition shown in the document
 ;;
 ;; The docs are what the compiler published in the module's dll, read with
-;; (janitor docs) while the document is expanded, so a page says what the
+;; (bjo docs) while the document is expanded, so a page says what the
 ;; module it describes was compiled with. The dll is one of the document's
 ;; sources: rebuilding the module makes a kept page stale.
 ;;
@@ -28,8 +28,8 @@
 
 (import (std prelude))
 (import (text bjodat-core))
-(import (janitor modules))
-(import (janitor docs))
+(import (bjo modules))
+(import (bjo docs))
 (import (samizdat read))
 (import (samizdat doc))
 (import (samizdat expand))
