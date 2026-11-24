@@ -33,12 +33,12 @@ Files are called ~.sz~.
 
 ** The nine modules
 
-| ~(samizdat read)~        | the reader: text to ~At~ items, text or commands, on bjorsec |
+| ~(samizdat read)~        | the reader: text to ~At~ items, text or commands, on ~(text parser-combinators)~ |
 | ~(samizdat doc)~         | the document: ~Block~, ~Inline~, ~Document~; a printer to s-expressions |
 | ~(samizdat expand)~      | runs the commands; what a command is written with            |
 | ~(samizdat commands)~    | ~standard-commands~                                          |
 | ~(samizdat lightweight)~ | commands that read Markdown's and Org's ways of writing: ~@read-list~, ~@read-table~ |
-| ~(samizdat markdown)~    | ~@markdown~ and ~@include-markdown~, through markdig-bjolang   |
+| ~(samizdat markdown)~    | ~@markdown~ and ~@include-markdown~, through ~(text markdown)~ |
 | ~(samizdat apidocs)~     | Bjolang modules' own docs: ~@generate-docs~, ~@defmodule~, ~@defdoc~, ~@defdocs~, ~@docref~ |
 | ~(samizdat html)~        | a ~Document~ as HTML: ~(text xml)~ nodes, and a writer for them; code highlighted through textmate-bjolang |
 | ~(samizdat gfm)~         | a ~Document~ as GitHub Flavored Markdown, for docs read in a repository |
@@ -426,10 +426,10 @@ Because *some* things are quicker to write this way.[^1] See |@ref["why"].
 }|
 #+END_SRC
 
-Markdown is read by [[https://github.com/bjoli/markdig-bjolang][markdig-bjolang]]
-— Markdig, GitHub flavoured — and translated into samizdat's own tree, so
-nothing of Markdown is left once it is read: a heading is a ~Heading~ with an
-id that ~@toc~ and ~@ref~ know, a footnote is one of the document's notes,
+Markdown is read by Bjolang's ~(text markdown)~ — CommonMark with the
+extensions of GitHub Flavored Markdown — and translated into samizdat's own
+tree, so nothing of Markdown is left once it is read: a heading is a
+~Heading~ with an id that ~@toc~ and ~@ref~ know, a footnote is one of the document's notes,
 numbered with the rest, a table is a ~TableBlock~, raw HTML is ~RawBlock~ and
 ~RawInline~ for HTML, and the typography pass runs over it like any other
 text. What Markdown has and samizdat does not is left out: a link's title, and
@@ -439,8 +439,8 @@ Write it ~@markdown|{...}|~ when the Markdown has braces or ~@~ s in it, which
 Markdown usually does; ~@markdown{...}~ works too, with the braces balanced.
 
 *Commands work inside*: ~@em{x}~ in a ~{...}~ body, ~|@em{x}~ in a ~|{...}|~
-one. Each is set aside before Markdig reads the text, as a placeholder it
-passes through as ordinary characters, and put back, expanded, where the
+one. Each is set aside before the Markdown is read, as a placeholder that
+Markdown reads as ordinary characters, and put back, expanded, where the
 placeholder ends up. In text it is text; in code it is its text. A command
 that makes a block — ~|@codeblock[...]{...}~, ~|@toc~ — goes in a paragraph of
 its own, and in running text it is refused.
@@ -747,13 +747,12 @@ in the [...]: at line 1, column 18: a comma is not a separator here
 #+BEGIN_SRC scheme
 (depends
   (package (name (samizdat))
-           (version (version-at-least "0.2.0"))
+           (version (version-at-least "0.11.0"))
            (source (git (url "https://github.com/bjoli/samizdat")))))
 #+END_SRC
 
-bjorsec, markdig-bjolang and textmate-bjolang come along with it.
-markdig-bjolang brings Markdig as a NuGet package and textmate-bjolang brings
-TextMateSharp, with the Oniguruma regex library in it as a native library for
+textmate-bjolang comes along with it. It brings TextMateSharp as a NuGet
+package, with the Oniguruma regex library in it as a native library for
 Linux, macOS and Windows. So building anything that uses samizdat needs the
 .NET SDK's ~dotnet~ command; see Bjolang's ~Docs/Projects.org~, "NuGet
 packages".

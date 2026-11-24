@@ -4,8 +4,8 @@
 
 ;; samizdat/src/markdown.bjo — the module (samizdat markdown).
 ;;
-;; Markdown in a samizdat document, read by markdig-bjolang and translated
-;; into samizdat's own tree: a Markdown heading is a `Heading` with an id that
+;; Markdown in a samizdat document, read by Bjolang's (text markdown) and
+;; translated into samizdat's own tree: a Markdown heading is a `Heading` with an id that
 ;; @toc and @ref know, a footnote is one of the document's notes, a table is
 ;; a `TableBlock`. Nothing of Markdown is left once it is read, and every
 ;; converter sees what it would have seen from samizdat markup.
@@ -19,8 +19,8 @@
 ;;     }|
 ;;
 ;; A command works inside too — `@em{x}` in a `{...}` body, `|@em{x}` in a
-;; `|{...}|` one. Each is set aside before Markdig reads the text, as a
-;; placeholder it passes through as ordinary characters, and put back,
+;; `|{...}|` one. Each is set aside before the Markdown is read, as a
+;; placeholder that Markdown reads as ordinary characters, and put back,
 ;; expanded, where the placeholder ends up: in text it is text, and a command
 ;; that makes a block does so in a paragraph of its own.
 ;;
@@ -33,7 +33,7 @@
 (import (samizdat read))
 (import (samizdat doc))
 (import (samizdat expand))
-(import (markdig-bjolang core))
+(import (text markdown))
 
 ;; ---------------------------------------------------------------------------
 ;; Placeholders
@@ -237,7 +237,10 @@
     ((MdHeading level xs)
      (def title (inlines-of md xs))
      [(Heading level (unique-id! cx (inlines->text title)) title)])
-    ((MdCodeBlock info code) [(CodeBlock (language (plain md info)) (plain md code))])
+    ;; The code ends with a newline, as CommonMark has it; a CodeBlock's does not.
+    ((MdCodeBlock info code)
+     [(CodeBlock (language (plain md info))
+                 (plain md (if (string-ends-with? code "\n") (string-drop-right code 1) code)))])
     ((MdQuote bs) [(Quote (blocks-of md bs))])
     ((MdListBlock l)
      [(ItemList (record-ref l ordered) 1 (vec-map (fun (item) (blocks-of md item)) (record-ref l items)))])
@@ -247,7 +250,7 @@
      (def body (record-ref t body))
      [(TableBlock (Table (caption (vec-empty))
                          (aligns (vec-map align-of (record-ref t aligns)))
-                         (head (rows-of md (record-ref t head)))
+                         (head (rows-of md [(record-ref t head)]))
                          (bodies (if (vec-empty? body) (vec-empty) [(rows-of md body)]))))])))
 
 ;; ---------------------------------------------------------------------------
@@ -257,7 +260,7 @@
 ;; Markdown, with `calls` in it as placeholders, as blocks of this document.
 (: translate (-> Ctx Call string (Vec Call) (Vec Piece)))
 (defun (translate cx c text calls)
-  (def doc (parse-markdown text))
+  (def doc (markdown-parse text))
   (def md (Md (cx cx) (call c) (calls calls) (footnotes (record-ref doc footnotes))
               (numbers (make-box (map-empty)))))
   (vec-map (fun (b) (PBlock b)) (blocks-of md (record-ref doc blocks))))

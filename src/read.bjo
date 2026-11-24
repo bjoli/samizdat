@@ -42,7 +42,7 @@
   at-lines at-line-blank? at-line-indentation)
 
 (import (std prelude))
-(import (bjorsec core))
+(import (text parser-combinators))
 (import (text bjodat-core))
 
 ;; ---------------------------------------------------------------------------

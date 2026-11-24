@@ -1,22 +1,12 @@
 (package
   (name (samizdat))
-  (version "0.10.5")
+  (version "0.11.0")
   (description "A markup for writing, after Racket's Scribble: @name[args]{text}, read into a tree any converter can print.")
   (license "MPL-2.0")
 
-  ;; The reader is written with bjorsec's combinators. To work on both at once,
-  ;; give (bjorsec) a path source in your own manifest: the root manifest's
-  ;; source wins.
+  ;; The reader uses (text parser-combinators) and @markdown uses
+  ;; (text markdown). Both are in Bjolang's distribution.
   (depends
-    (package (name (bjorsec))
-             (version (version-at-least "0.3.2"))
-             (source (git (url "https://github.com/bjoli/bjorsec"))))
-    ;; @markdown. It brings Markdig as a NuGet package, so building anything
-    ;; with samizdat needs the .NET SDK's dotnet command. 0.2.1 uses
-    ;; vec-append, as Bjolang names it.
-    (package (name (markdig-bjolang))
-             (version (version-at-least "0.2.1"))
-             (source (git (url "https://github.com/bjoli/markdig-bjolang"))))
     ;; Highlighted code blocks in HTML. It brings TextMateSharp as a NuGet
     ;; package, with Oniguruma as a native library. 0.2.0 declares its themes
     ;; and styles as grammars, which Bjolang 0.2.0 requires. 0.2.1 names the
