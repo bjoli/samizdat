@@ -1,5 +1,17 @@
 * samizdat — a markup for writing, after Scribble
 
+*Deprecated.* samizdat is now part of Bjolang's distribution, in
+~lib/samizdat~, and its guide is Bjolang's ~Docs/Samizdat.org~. The modules
+have the same names, so a program keeps its imports. Remove the dependency
+on ~(samizdat)~ from your manifest: a Bjolang with samizdat in it refuses
+it, and also refuses to build this package. This repository is for older
+Bjolang versions, and gets no new changes.
+
+One thing changed in the move: ~#:highlighter~ in ~html-options~ is a
+function of a code block's language and code that returns the ~<pre>~ to
+write, or ~None~. ~#:highlight-style~ is gone: give textmate-bjolang's
+~code->node~ its ~#:style~ in that function.
+
 samizdat reads text written like Racket's Scribble —
 
 #+BEGIN_SRC text
