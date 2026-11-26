@@ -136,6 +136,6 @@
      (match (meta-of doc)
        ((Err e) (println (str input ": " e)) 1)
        ((Ok m)
-        (file-write-text output (page m doc))
+        (raise-err (file-write-text output (page m doc)))
         (println (str "wrote " output))
         0)))))

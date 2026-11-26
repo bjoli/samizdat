@@ -82,7 +82,7 @@ standard output.")
      (if (= output "-")
          (print text)
          (begin
-           (file-write-text output text)
+           (raise-err (file-write-text output text))
            (eprintln (str "wrote " output))))
      0)))
 
